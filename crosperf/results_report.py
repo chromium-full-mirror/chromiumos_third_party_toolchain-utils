@@ -1,6 +1,8 @@
 #!/usr/bin/python
 
-# Copyright 2011 Google Inc. All Rights Reserved.
+# Copyright (c) 2013 The Chromium OS Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 
 from utils.tabulator import *
 
@@ -479,8 +481,8 @@ pre {
 
       for i in range(2, len(data_table)):
         cur_row_data = data_table[i]
-        autotest_key = cur_row_data[0].string_value
-        title = "{0}: {1}".format(item, autotest_key.replace("/", ""))
+        test_key = cur_row_data[0].string_value
+        title = "{0}: {1}".format(item, test_key.replace("/", ""))
         chart = ColumnChart(title, 300, 200)
         chart.AddColumn("Label", "string")
         chart.AddColumn("Average", "number")

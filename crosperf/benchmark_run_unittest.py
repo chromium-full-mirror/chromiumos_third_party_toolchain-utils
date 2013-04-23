@@ -1,6 +1,8 @@
 #!/usr/bin/python
 
-# Copyright 2011 Google Inc. All Rights Reserved.
+# Copyright (c) 2013 The Chromium OS Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 
 """Testing of benchmark_run."""
 
@@ -8,7 +10,7 @@ import unittest
 
 from utils import logger
 
-from autotest_runner import MockAutotestRunner
+from suite_runner import MockSuiteRunner
 from benchmark_run import MockBenchmarkRun
 from label import MockLabel
 from benchmark import Benchmark

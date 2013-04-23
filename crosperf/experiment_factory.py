@@ -39,6 +39,7 @@ class ExperimentFactory(object):
     config.AddConfig("no_email", global_settings.GetField("no_email"))
     share_users = global_settings.GetField("share_users")
     results_dir = global_settings.GetField("results_dir")
+    chrome_src = global_settings.GetField("chrome_src")
     # Default cache hit conditions. The image checksum in the cache and the
     # computed checksum of the image must match. Also a cache file must exist.
     cache_conditions = [CacheConditions.CACHE_FILE_EXISTS,
@@ -57,20 +58,21 @@ class ExperimentFactory(object):
     all_benchmark_settings = experiment_file.GetSettings("benchmark")
     for benchmark_settings in all_benchmark_settings:
       benchmark_name = benchmark_settings.name
-      autotest_name = benchmark_settings.GetField("autotest_name")
-      if not autotest_name:
-        autotest_name = benchmark_name
-      autotest_args = benchmark_settings.GetField("autotest_args")
+      test_name = benchmark_settings.GetField("test_name")
+      if not test_name:
+        test_name = benchmark_name
+      test_args = benchmark_settings.GetField("test_args")
       iterations = benchmark_settings.GetField("iterations")
       outlier_range = benchmark_settings.GetField("outlier_range")
       perf_args = benchmark_settings.GetField("perf_args")
       rm_chroot_tmp = benchmark_settings.GetField("rm_chroot_tmp")
       key_results_only = benchmark_settings.GetField("key_results_only")
+      suite = benchmark_settings.GetField("suite")
 
-      benchmark = Benchmark(benchmark_name, autotest_name, autotest_args,
+      benchmark = Benchmark(benchmark_name, test_name, test_args,
                             iterations, outlier_range,
                             key_results_only, rm_chroot_tmp,
-                            perf_args)
+                            perf_args, suite)
       benchmarks.append(benchmark)
 
     # Construct labels.
@@ -85,6 +87,8 @@ class ExperimentFactory(object):
       my_remote = label_settings.GetField("remote")
       image_md5sum = label_settings.GetField("md5sum")
       cache_dir = label_settings.GetField("cache_dir")
+      chrome_src = label_settings.GetField("chrome_src")
+
     # TODO(yunlian): We should consolidate code in machine_manager.py
     # to derermine whether we are running from within google or not
       if ("corp.google.com" in socket.gethostname() and
@@ -99,10 +103,10 @@ class ExperimentFactory(object):
       image_args = label_settings.GetField("image_args")
       if test_flag.GetTestMode():
         label = MockLabel(label_name, image, chromeos_root, board, my_remote,
-                          image_args, image_md5sum, cache_dir)
+                          image_args, image_md5sum, cache_dir, chrome_src)
       else:
         label = Label(label_name, image, chromeos_root, board, my_remote,
-                      image_args, image_md5sum, cache_dir)
+                      image_args, image_md5sum, cache_dir, chrome_src)
       labels.append(label)
 
     email = global_settings.GetField("email")

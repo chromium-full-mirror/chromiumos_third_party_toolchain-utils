@@ -1,6 +1,8 @@
 #!/usr/bin/python
 
-# Copyright 2011 Google Inc. All Rights Reserved.
+# Copyright (c) 2013 The Chromium OS Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 
 import datetime
 import os
@@ -11,9 +13,11 @@ import traceback
 from utils import command_executer
 from utils import timeline
 
-from autotest_runner import AutotestRunner
+from suite_runner import SuiteRunner
 from results_cache import Result
 from results_cache import ResultsCache
+from results_cache import TelemetryResult
+
 
 STATUS_FAILED = "FAILED"
 STATUS_SUCCEEDED = "SUCCEEDED"
@@ -21,7 +25,6 @@ STATUS_IMAGING = "IMAGING"
 STATUS_RUNNING = "RUNNING"
 STATUS_WAITING = "WAITING"
 STATUS_PENDING = "PENDING"
-
 
 class BenchmarkRun(threading.Thread):
   def __init__(self, name, benchmark,
@@ -42,39 +45,43 @@ class BenchmarkRun(threading.Thread):
     self.retval = None
     self.run_completed = False
     self.machine_manager = machine_manager
-    self.cache = ResultsCache()
-    self.autotest_runner = AutotestRunner(self._logger)
+    self.suite_runner = SuiteRunner(self._logger)
     self.machine = None
     self.cache_conditions = cache_conditions
     self.runs_complete = 0
     self.cache_hit = False
     self.failure_reason = ""
-    self.autotest_args = "%s %s" % (benchmark.autotest_args,
+    self.test_args = "%s %s" % (benchmark.test_args,
                                     self._GetExtraAutotestArgs())
     self._ce = command_executer.GetCommandExecuter(self._logger)
     self.timeline = timeline.Timeline()
     self.timeline.Record(STATUS_PENDING)
     self.share_users = share_users
 
+  def ReadCache(self):
+    # Just use the first machine for running the cached version,
+    # without locking it.
+    self.cache = ResultsCache()
+    self.cache.Init(self.label.chromeos_image,
+                    self.label.chromeos_root,
+                    self.benchmark.test_name,
+                    self.iteration,
+                    self.test_args,
+                    self.machine_manager,
+                    self.label.board,
+                    self.cache_conditions,
+                    self._logger,
+                    self.label,
+                    self.share_users,
+                    self.benchmark.suite
+                   )
+
+    self.result = self.cache.ReadResult()
+    self.cache_hit = (self.result is not None)
+
   def run(self):
     try:
-      # Just use the first machine for running the cached version,
-      # without locking it.
-      self.cache.Init(self.label.chromeos_image,
-                      self.label.chromeos_root,
-                      self.benchmark.autotest_name,
-                      self.iteration,
-                      self.autotest_args,
-                      self.machine_manager,
-                      self.label.board,
-                      self.cache_conditions,
-                      self._logger,
-                      self.label,
-                      self.share_users
-                     )
-
-      self.result = self.cache.ReadResult()
-      self.cache_hit = (self.result is not None)
+      self.ReadCache()
 
       if self.result:
         self._logger.LogOutput("%s: Cache hit." % self.name)
@@ -86,8 +93,9 @@ class BenchmarkRun(threading.Thread):
         self.timeline.Record(STATUS_WAITING)
         # Try to acquire a machine now.
         self.machine = self.AcquireMachine()
-        self.cache.remote = self.machine.name
         self.result = self.RunTest(self.machine)
+
+        self.cache.remote = self.machine.name
         self.cache.StoreResult(self.result)
 
       if self.terminated:
@@ -97,7 +105,7 @@ class BenchmarkRun(threading.Thread):
         self.timeline.Record(STATUS_SUCCEEDED)
       else:
         if self.timeline.GetLastEvent() != STATUS_FAILED:
-          self.failure_reason = "Return value of autotest was non-zero."
+          self.failure_reason = "Return value of test suite was non-zero."
           self.timeline.Record(STATUS_FAILED)
 
     except Exception, e:
@@ -114,7 +122,7 @@ class BenchmarkRun(threading.Thread):
 
   def Terminate(self):
     self.terminated = True
-    self.autotest_runner.Terminate()
+    self.suite_runner.Terminate()
     if self.timeline.GetLastEvent() != STATUS_FAILED:
       self.timeline.Record(STATUS_FAILED)
       self.failure_reason = "Thread terminated."
@@ -138,16 +146,19 @@ class BenchmarkRun(threading.Thread):
     return machine
 
   def _GetExtraAutotestArgs(self):
+    if self.benchmark.perf_args and self.benchmark.suite == "telemetry":
+      self._logger.LogError("Telemetry benchmark does not support profiler.")
+
     if self.benchmark.perf_args:
       perf_args_list = self.benchmark.perf_args.split(" ")
       perf_args_list = [perf_args_list[0]] + ["-a"] + perf_args_list[1:]
       perf_args = " ".join(perf_args_list)
       if not perf_args_list[0] in ["record", "stat"]:
         raise Exception("perf_args must start with either record or stat")
-      extra_autotest_args = ["--profiler=custom_perf",
+      extra_test_args = ["--profiler=custom_perf",
                              ("--profiler_args='perf_options=\"%s\"'" %
                               perf_args)]
-      return " ".join(extra_autotest_args)
+      return " ".join(extra_test_args)
     else:
       return ""
 
@@ -156,20 +167,17 @@ class BenchmarkRun(threading.Thread):
     self.machine_manager.ImageMachine(machine,
                                       self.label)
     self.timeline.Record(STATUS_RUNNING)
-    [retval, out, err] = self.autotest_runner.Run(machine.name,
-                                                  self.label.chromeos_root,
-                                                  self.label.board,
-                                                  self.benchmark.autotest_name,
-                                                  self.autotest_args)
+    [retval, out, err] = self.suite_runner.Run(machine.name,
+                                                  self.label,
+                                                  self.benchmark,
+                                                  self.test_args)
     self.run_completed = True
-
     return Result.CreateFromRun(self._logger,
-                                self.label.chromeos_root,
-                                self.label.board,
-                                self.label.name,
+                                self.label,
                                 out,
                                 err,
-                                retval)
+                                retval,
+                                self.benchmark.suite)
 
   def SetCacheConditions(self, cache_conditions):
     self.cache_conditions = cache_conditions
@@ -184,11 +192,11 @@ class MockBenchmarkRun(BenchmarkRun):
     self.machine_manager.ImageMachine(machine,
                                       self.label)
     self.timeline.Record(STATUS_RUNNING)
-    [retval, out, err] = self.autotest_runner.Run(machine.name,
+    [retval, out, err] = self.suite_runner.Run(machine.name,
                                                   self.label.chromeos_root,
                                                   self.label.board,
-                                                  self.benchmark.autotest_name,
-                                                  self.autotest_args)
+                                                  self.benchmark.test_name,
+                                                  self.test_args)
     self.run_completed = True
     rr = Result("Results placed in /tmp/test", "", 0)
     rr.out = out

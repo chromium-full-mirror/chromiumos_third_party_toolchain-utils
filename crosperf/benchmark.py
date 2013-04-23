@@ -1,26 +1,32 @@
 #!/usr/bin/python
 
-# Copyright 2011 Google Inc. All Rights Reserved.
+# Copyright (c) 2013 The Chromium OS Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 
 
 class Benchmark(object):
   """Class representing a benchmark to be run.
 
-  Contains details of the autotest, arguments to pass to the autotest,
-  iterations to run the autotest and so on. Note that the benchmark name
-  can be different to the autotest name. For example, you may want to have
-  two different benchmarks which run the same autotest with different
+  Contains details of the benchmark suite, arguments to pass to the suite,
+  iterations to run the benchmark suite and so on. Note that the benchmark name
+  can be different to the test suite name. For example, you may want to have
+  two different benchmarks which run the same test_name with different
   arguments.
   """
 
-  def __init__(self, name, autotest_name, autotest_args, iterations,
-               outlier_range, key_results_only, rm_chroot_tmp, perf_args):
+  def __init__(self, name, test_name, test_args, iterations,
+               outlier_range, key_results_only, rm_chroot_tmp, perf_args,
+               suite="pyauto"):
     self.name = name
-    self.autotest_name = autotest_name
-    self.autotest_args = autotest_args
+    #For telemetry, this is the benchmark name.
+    self.test_name = test_name
+    #For telemetry, this is the data.
+    self.test_args = test_args
     self.iterations = iterations
     self.outlier_range = outlier_range
     self.perf_args = perf_args
     self.key_results_only = key_results_only
     self.rm_chroot_tmp = rm_chroot_tmp
     self.iteration_adjusted = False
+    self.suite = suite

@@ -1,6 +1,8 @@
 #!/usr/bin/python
 
-# Copyright 2011 Google Inc. All Rights Reserved.
+# Copyright (c) 2013 The Chromium OS Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 
 import StringIO
 import unittest
@@ -39,7 +41,7 @@ class ExperimentFactoryTest(unittest.TestCase):
 
     self.assertEqual(len(experiment.benchmarks), 1)
     self.assertEqual(experiment.benchmarks[0].name, "PageCycler")
-    self.assertEqual(experiment.benchmarks[0].autotest_name, "PageCycler")
+    self.assertEqual(experiment.benchmarks[0].test_name, "PageCycler")
     self.assertEqual(experiment.benchmarks[0].iterations, 3)
 
     self.assertEqual(len(experiment.labels), 2)

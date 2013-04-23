@@ -1,6 +1,8 @@
 #!/usr/bin/python
 
-# Copyright 2011 Google Inc. All Rights Reserved.
+# Copyright (c) 2013 The Chromium OS Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 
 """Table generating, analyzing and printing functions.
 
@@ -407,9 +409,10 @@ class PValueResult(ComparisonResult):
 
 class KeyAwareComparisonResult(ComparisonResult):
   def _IsLowerBetter(self, key):
-    lower_is_better_keys = ["milliseconds", "ms", "seconds", "KB",
-                            "rdbytes", "wrbytes"]
-    return any([key.startswith(l + "_") for l in lower_is_better_keys])
+    lower_is_better_keys = ["milliseconds", "ms_", "seconds_", "KB",
+                            "rdbytes", "wrbytes", "dropped_percent",
+                            "(ms)", "(seconds)"]
+    return any([l in key for l in lower_is_better_keys])
 
   def _InvertIfLowerIsBetter(self, cell):
     if self._IsLowerBetter(cell.name):

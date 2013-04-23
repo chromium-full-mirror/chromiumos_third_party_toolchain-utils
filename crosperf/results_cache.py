@@ -31,12 +31,15 @@ class Result(object):
   perf.report, etc. The key generation is handled by the ResultsCache class.
   """
 
-  def __init__(self, chromeos_root, logger, label_name):
-    self._chromeos_root = chromeos_root
+  def __init__(self, logger, label):
+    self._chromeos_root = label.chromeos_root
     self._logger = logger
     self._ce = command_executer.GetCommandExecuter(self._logger)
     self._temp_dir = None
-    self.label_name = label_name
+    self.label = label
+    self.results_dir = None
+    self.perf_data_files = []
+    self.perf_report_files = []
 
   def _CopyFilesTo(self, dest_dir, files_to_copy):
     file_index = 0
@@ -91,6 +94,8 @@ class Result(object):
     raise Exception("Could not find results directory.")
 
   def _FindFilesInResultsDir(self, find_args):
+    if not self.results_dir:
+      return None
     command = "find %s %s" % (self.results_dir,
                               find_args)
     ret, out, _ = self._ce.RunCommand(command, return_output=True)
@@ -150,8 +155,8 @@ class Result(object):
           value = str(misc.UnitToNumber(num_events))
           self.keyvals[key] = value
 
-  def _PopulateFromRun(self, board, out, err, retval):
-    self._board = board
+  def _PopulateFromRun(self, out, err, retval):
+    self._board = self.label.board
     self.out = out
     self.err = err
     self.retval = retval
@@ -199,7 +204,7 @@ class Result(object):
     self._ProcessResults()
 
   def CleanUp(self, rm_chroot_tmp):
-    if rm_chroot_tmp:
+    if rm_chroot_tmp and self.results_dir:
       command = "rm -rf %s" % self.results_dir
       self._ce.RunCommand(command)
     if self._temp_dir:
@@ -216,20 +221,21 @@ class Result(object):
       pickle.dump(self.err, f)
       pickle.dump(self.retval, f)
 
-    tarball = os.path.join(temp_dir, AUTOTEST_TARBALL)
-    command = ("cd %s && "
-               "tar "
-               "--exclude=var/spool "
-               "--exclude=var/log "
-               "-cjf %s ." % (self.results_dir, tarball))
-    ret = self._ce.RunCommand(command)
-    if ret:
-      raise Exception("Couldn't store autotest output directory.")
+    if self.results_dir:
+      tarball = os.path.join(temp_dir, AUTOTEST_TARBALL)
+      command = ("cd %s && "
+                 "tar "
+                 "--exclude=var/spool "
+                 "--exclude=var/log "
+                 "-cjf %s ." % (self.results_dir, tarball))
+      ret = self._ce.RunCommand(command)
+      if ret:
+        raise Exception("Couldn't store autotest output directory.")
     # Store machine info.
     # TODO(asharif): Make machine_manager a singleton, and don't pass it into
     # this function.
     with open(os.path.join(temp_dir, MACHINE_FILE), "w") as f:
-      f.write(machine_manager.machine_checksum_string[self.label_name])
+      f.write(machine_manager.machine_checksum_string[self.label.name])
 
     if os.path.exists(cache_dir):
       command = "rm -rf {0}".format(cache_dir)
@@ -246,21 +252,71 @@ class Result(object):
                       (temp_dir, cache_dir))
 
   @classmethod
-  def CreateFromRun(cls, logger, chromeos_root, board, label_name,
-                    out, err, retval):
-    result = cls(chromeos_root, logger, label_name)
-    result._PopulateFromRun(board, out, err, retval)
+  def CreateFromRun(cls, logger, label, out, err, retval, suite="pyauto"):
+    if suite == "telemetry":
+      result = TelemetryResult(logger, label)
+    else:
+      result = cls(logger, label)
+    result._PopulateFromRun(out, err, retval)
     return result
 
   @classmethod
-  def CreateFromCacheHit(cls, chromeos_root, logger, cache_dir, label_name):
-    result = cls(chromeos_root, logger, label_name)
+  def CreateFromCacheHit(cls, logger, label, cache_dir,
+                         suite="pyauto"):
+    if suite == "telemetry":
+      result = TelemetryResult(logger, label)
+    else:
+      result = cls(logger, label)
     try:
       result._PopulateFromCacheDir(cache_dir)
+
     except Exception as e:
       logger.LogError("Exception while using cache: %s" % e)
       return None
     return result
+
+class TelemetryResult(Result):
+
+  def __init__(self, logger, label):
+    super(TelemetryResult, self).__init__(logger, label)
+
+  def _PopulateFromRun(self, out, err, retval):
+    self.out = out
+    self.err = err
+    self.retval = retval
+
+    self._ProcessResults()
+
+  def _ProcessResults(self):
+    # The output is:
+    # url,average_commit_time (ms),...
+    # www.google.com,33.4,21.2,...
+    # We need to convert to this format:
+    # {"www.google.com:average_commit_time (ms)": "33.4",
+    #  "www.google.com:...": "21.2"}
+
+    lines = self.out.splitlines()
+    self.keyvals = {}
+
+    if not lines:
+      return
+    labels = lines[0].split(",")
+    for line in lines[1:]:
+      fields = line.split(",")
+      if (len(fields) != len(labels)):
+        continue
+      for i in range(1, len(labels)):
+        key = "%s %s" % (fields[0], labels[i])
+        value = fields[i]
+        self.keyvals[key] = value
+    self.keyvals["retval"] = self.retval
+
+  def _PopulateFromCacheDir(self, cache_dir):
+    with open(os.path.join(cache_dir, RESULTS_FILE), "r") as f:
+      self.out = pickle.load(f)
+      self.err = pickle.load(f)
+      self.retval = pickle.load(f)
+    self._ProcessResults()
 
 
 class CacheConditions(object):
@@ -295,14 +351,14 @@ class ResultsCache(object):
   """
   CACHE_VERSION = 6
 
-  def Init(self, chromeos_image, chromeos_root, autotest_name, iteration,
-           autotest_args, machine_manager, board, cache_conditions,
-           logger_to_use, label, share_users):
+  def Init(self, chromeos_image, chromeos_root, test_name, iteration,
+           test_args, machine_manager, board, cache_conditions,
+           logger_to_use, label, share_users, suite):
     self.chromeos_image = chromeos_image
     self.chromeos_root = chromeos_root
-    self.autotest_name = autotest_name
+    self.test_name = test_name
     self.iteration = iteration
-    self.autotest_args = autotest_args,
+    self.test_args = test_args,
     self.board = board
     self.cache_conditions = cache_conditions
     self.machine_manager = machine_manager
@@ -310,6 +366,7 @@ class ResultsCache(object):
     self._ce = command_executer.GetCommandExecuter(self._logger)
     self.label = label
     self.share_users = share_users
+    self.suite = suite
 
   def _GetCacheDirForRead(self):
     matching_dirs = []
@@ -363,11 +420,11 @@ class ResultsCache(object):
           machine_id_checksum = machine.machine_id_checksum
           break
 
-    autotest_args_checksum = hashlib.md5(
-        "".join(self.autotest_args)).hexdigest()
+    test_args_checksum = hashlib.md5(
+        "".join(self.test_args)).hexdigest()
     return (image_path_checksum,
-            self.autotest_name, str(self.iteration),
-            autotest_args_checksum,
+            self.test_name, str(self.iteration),
+            test_args_checksum,
             checksum,
             machine_checksum,
             machine_id_checksum,
@@ -385,10 +442,10 @@ class ResultsCache(object):
       return None
 
     self._logger.LogOutput("Trying to read from cache dir: %s" % cache_dir)
-
-    result = Result.CreateFromCacheHit(self.chromeos_root,
-                                       self._logger, cache_dir, self.label.name)
-
+    result = Result.CreateFromCacheHit(self._logger,
+                                       self.label,
+                                       cache_dir,
+                                       self.suite)
     if not result:
       return None
 

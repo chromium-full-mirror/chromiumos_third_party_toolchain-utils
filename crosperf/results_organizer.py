@@ -1,6 +1,9 @@
 #!/usr/bin/python
 
-# Copyright 2012 Google Inc. All Rights Reserved.
+# Copyright (c) 2013 The Chromium OS Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
 """Parse data from benchmark_runs for tabulator."""
 import re
 
@@ -50,15 +53,15 @@ class ResultOrganizer(object):
         continue
       benchmark = benchmark_run.benchmark
       key_filter_on = (benchmark.key_results_only and
-                       "PyAutoPerfTest" in benchmark.name + benchmark.autotest_name and
-                       "perf." not in benchmark.autotest_args)
-      for autotest_key in benchmark_run.result.keyvals:
+                       "PyAutoPerfTest" in benchmark.name + benchmark.test_name
+                       and "perf." not in benchmark.test_args)
+      for test_key in benchmark_run.result.keyvals:
         if (key_filter_on and
-            not any([key for key in self.key_filter if key in autotest_key])
+            not any([key for key in self.key_filter if key in test_key])
            ):
           continue
-        result_value = benchmark_run.result.keyvals[autotest_key]
-        cur_dict[autotest_key] = result_value
+        result_value = benchmark_run.result.keyvals[test_key]
+        cur_dict[test_key] = result_value
     self._DuplicatePass()
 
   def _DuplicatePass(self):

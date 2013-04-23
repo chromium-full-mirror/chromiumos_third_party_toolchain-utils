@@ -30,7 +30,7 @@ class CrosMachine(object):
     self.checksum = None
     self.locked = False
     self.released_time = time.time()
-    self.autotest_run = None
+    self.test_run = None
     self.chromeos_root = chromeos_root
     self._GetMemoryInfo()
     self._GetCPUInfo()
@@ -42,7 +42,7 @@ class CrosMachine(object):
   def _ParseMemoryInfo(self):
     line = self.meminfo.splitlines()[0]
     usable_kbytes = int(line.split()[1])
-    # This code is from src/third_party/autotest/files/client/bin/base_utils.py
+    # This code is from src/third_party/test/files/client/bin/base_utils.py
     # usable_kbytes is system's usable DRAM in kbytes,
     #   as reported by memtotal() from device /proc/meminfo memtotal
     #   after Linux deducts 1.5% to 9.5% for system table overhead
@@ -271,13 +271,13 @@ class MachineManager(object):
                 if not machine.locked]:
         if m.checksum == image_checksum:
           m.locked = True
-          m.autotest_run = threading.current_thread()
+          m.test_run = threading.current_thread()
           return m
       for m in [machine for machine in self.GetAvailableMachines(label)
                 if not machine.locked]:
         if not m.checksum:
           m.locked = True
-          m.autotest_run = threading.current_thread()
+          m.test_run = threading.current_thread()
           return m
       # This logic ensures that threads waiting on a machine will get a machine
       # with a checksum equal to their image over other threads. This saves time
@@ -289,7 +289,7 @@ class MachineManager(object):
                 if not machine.locked]:
         if time.time() - m.released_time > 20:
           m.locked = True
-          m.autotest_run = threading.current_thread()
+          m.test_run = threading.current_thread()
           return m
     return None
 
@@ -337,18 +337,18 @@ class MachineManager(object):
                                 "Checksum")
       table = [header]
       for m in self._machines:
-        if m.autotest_run:
-          autotest_name = m.autotest_run.name
-          autotest_status = m.autotest_run.timeline.GetLastEvent()
+        if m.test_run:
+          test_name = m.test_run.name
+          test_status = m.test_run.timeline.GetLastEvent()
         else:
-          autotest_name = ""
-          autotest_status = ""
+          test_name = ""
+          test_status = ""
 
         try:
           machine_string = stringify_fmt % (m.name,
-                                            autotest_name,
+                                            test_name,
                                             m.locked,
-                                            autotest_status,
+                                            test_status,
                                             m.checksum)
         except Exception:
           machine_string = ""
@@ -382,7 +382,7 @@ class MockCrosMachine(CrosMachine):
     self.checksum = None
     self.locked = False
     self.released_time = time.time()
-    self.autotest_run = None
+    self.test_run = None
     self.chromeos_root = chromeos_root
     self.checksum_string = re.sub("\d", "", name)
     #In test, we assume "lumpy1", "lumpy2" are the same machine.
