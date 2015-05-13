@@ -87,6 +87,8 @@ def FindBuildRecordFromLog(description, log_info):
           break
       try:
         # Check to see of the build record is the right one.
+        print("(shenhan): A - {}, B - {}".format(
+          str(description), my_dict["reason"]))
         if str(description) in my_dict["reason"]:
           # We found a match; we're done.
           return my_dict
@@ -97,6 +99,42 @@ def FindBuildRecordFromLog(description, log_info):
         continue
 
     # We hit the bottom of the log without a match.
+    return {}
+
+def GetBuildRecord(file_dir, reason_to_find):
+    commands = ("{0}/utils/buildbot_json.py builds "
+                "https://chromegw/i/tryserver.chromiumos/"
+                .format(file_dir))
+    ce = command_executer.GetCommandExecuter()
+    class BuildRecordConsumer(object):
+
+        def __init__(self, reason):
+            self.record_dict = {}
+            self.reason = reason
+            self.record_found = None
+
+        def consume(self, line, output, pobject):
+            if line.startswith("Build:"):
+                print("(shenhan): consumer found one record.")
+                if ('reason' in self.record_dict and
+                    self.reason in self.record_dict['reason']):
+                    self.record_found = self.record_dict
+                    print("(shenhan): found record \"{}\"".format(self.reason))
+                    pobject.kill()
+                self.record_dict = {}
+            else:
+                line = line.strip()
+                segs = line.split(":", 1)
+                if len(segs) >= 2:
+                    key, value = segs
+                    self.record_dict[key] = value
+
+    consumer = BuildRecordConsumer(reason_to_find)
+    ce.RunCommand2(commands, cwd=None, line_consumer=consumer.consume,
+                   timeout=60 * 30, join_stderr=False, env=None)
+    # Ignore return value, just check if we found the record.
+    if consumer.record_found:
+        return consumer.record_found
     return {}
 
 
@@ -194,7 +232,9 @@ def GetTrybotImage(chromeos_root, buildbot_name, patch_list, build_tag,
     # Wait for  buildbot to finish running (check every 10 minutes).  Wait
     # 10 minutes before the first check to give the buildbot time to launch
     # (so we don't start looking for build data before it's out there).
-    time.sleep(SLEEP_TIME)
+    print("(shenhan): about to sleep.")
+    print("(shenhan): description: {}".format(description))
+    time.sleep(200)
     done = False
     pending = True
     # pending_time is the time between when we submit the job and when the

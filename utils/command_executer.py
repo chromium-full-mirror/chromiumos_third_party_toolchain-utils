@@ -389,6 +389,7 @@ class CommandExecuter:
       env:           Execution environment.
       line_consumer: A function that will ba called by this function. See above
                      for details.
+      timeout:       Time out seconds for command run.
 
     Returns:
       Execution return code.
