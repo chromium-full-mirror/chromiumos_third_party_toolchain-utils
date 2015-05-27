@@ -28,7 +28,7 @@ def FileCheckName(name):
 
 def OpenLiveCheck(file_name):
   with FileCreationMask(0000):
-    fd = open(file_name, "a+w")
+    fd = open(file_name, "a+")
   try:
     fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
   except IOError:
@@ -39,11 +39,12 @@ def OpenLiveCheck(file_name):
 class FileCreationMask(object):
   def __init__(self, mask):
     self._mask = mask
+    self._old_mask = None
 
   def __enter__(self):
     self._old_mask = os.umask(self._mask)
 
-  def __exit__(self, type, value, traceback):
+  def __exit__(self, typ, value, traceback):
     os.umask(self._old_mask)
 
 
@@ -88,6 +89,7 @@ class FileLock(object):
     assert os.path.isdir(lock_dir), (
         "Locks dir: %s doesn't exist!" % lock_dir)
     self._file = None
+    self._description = None
 
   @classmethod
   def AsString(cls, file_locks):
@@ -162,7 +164,7 @@ class FileLock(object):
         logger.GetLogger().LogError(ex)
         return None
 
-  def __exit__(self, type, value, traceback):
+  def __exit__(self, typ, value, traceback):
     self._file.truncate(0)
     self._file.write(json.dumps(self._description.__dict__, skipkeys=True))
     self._file.close()

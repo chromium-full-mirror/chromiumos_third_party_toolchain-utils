@@ -7,6 +7,8 @@ import getpass
 import os
 import time
 
+import afe_lock_machine
+
 from utils import command_executer
 from utils import logger
 from utils.email_sender import EmailSender
@@ -32,38 +34,92 @@ class ExperimentRunner(object):
     if experiment.log_level != "verbose":
       self.STATUS_TIME_DELAY = 10
 
+  def _GetMachineList(self):
+    """Return a list of all requested machines.
+
+    Create a list of all the requested machines, both global requests and
+    label-specific requests, and return the list.
+    """
+    machines = self._experiment.remote
+    for l in self._experiment.labels:
+      if l.remote:
+        machines += l.remote
+    return machines
+
+  def _LockAllMachines(self, experiment):
+    """Attempt to globally lock all of the machines requested for run.
+
+    This method will use the AFE server to globally lock all of the machines
+    requested for this crosperf run, to prevent any other crosperf runs from
+    being able to update/use the machines while this experiment is running.
+    """
+    lock_mgr = afe_lock_machine.AFELockManager(
+        self._GetMachineList(),
+        "",
+        experiment.labels[0].chromeos_root,
+        None,
+        log=self.l,
+    )
+    for m in lock_mgr.machines:
+      if not lock_mgr.MachineIsKnown(m):
+        lock_mgr.AddLocalMachine(m)
+    machine_states = lock_mgr.GetMachineStates("lock")
+    lock_mgr.CheckMachineLocks(machine_states, "lock")
+    lock_mgr.UpdateMachines(True)
+
+  def _UnlockAllMachines(self, experiment):
+    """Attempt to globally unlock all of the machines requested for run.
+
+    The method will use the AFE server to globally unlock all of the machines
+    requested for this crosperf run.
+    """
+    lock_mgr = afe_lock_machine.AFELockManager(
+        self._GetMachineList(),
+        "",
+        experiment.labels[0].chromeos_root,
+        None,
+        log=self.l,
+    )
+    machine_states = lock_mgr.GetMachineStates("unlock")
+    lock_mgr.CheckMachineLocks(machine_states, "unlock")
+    lock_mgr.UpdateMachines(False)
+
   def _Run(self, experiment):
-    status = ExperimentStatus(experiment)
-    experiment.Run()
-    last_status_time = 0
-    last_status_string = ""
     try:
-      if experiment.log_level != "verbose":
-        self.l.LogStartDots()
-      while not experiment.IsComplete():
-        if last_status_time + self.STATUS_TIME_DELAY < time.time():
-          last_status_time = time.time()
-          border = "=============================="
-          if experiment.log_level == "verbose":
-            self.l.LogOutput(border)
-            self.l.LogOutput(status.GetProgressString())
-            self.l.LogOutput(status.GetStatusString())
-            self.l.LogOutput(border)
-          else:
-            current_status_string = status.GetStatusString()
-            if (current_status_string != last_status_string):
-              self.l.LogEndDots()
+      self._LockAllMachines(experiment)
+      status = ExperimentStatus(experiment)
+      experiment.Run()
+      last_status_time = 0
+      last_status_string = ""
+      try:
+        if experiment.log_level != "verbose":
+          self.l.LogStartDots()
+        while not experiment.IsComplete():
+          if last_status_time + self.STATUS_TIME_DELAY < time.time():
+            last_status_time = time.time()
+            border = "=============================="
+            if experiment.log_level == "verbose":
               self.l.LogOutput(border)
-              self.l.LogOutput(current_status_string)
+              self.l.LogOutput(status.GetProgressString())
+              self.l.LogOutput(status.GetStatusString())
               self.l.LogOutput(border)
-              last_status_string = current_status_string
             else:
-              self.l.LogAppendDot()
-        time.sleep(self.THREAD_MONITOR_DELAY)
-    except KeyboardInterrupt:
-      self._terminated = True
-      self.l.LogError("Ctrl-c pressed. Cleaning up...")
-      experiment.Terminate()
+              current_status_string = status.GetStatusString()
+              if (current_status_string != last_status_string):
+                self.l.LogEndDots()
+                self.l.LogOutput(border)
+                self.l.LogOutput(current_status_string)
+                self.l.LogOutput(border)
+                last_status_string = current_status_string
+              else:
+                self.l.LogAppendDot()
+          time.sleep(self.THREAD_MONITOR_DELAY)
+      except KeyboardInterrupt:
+        self._terminated = True
+        self.l.LogError("Ctrl-c pressed. Cleaning up...")
+        experiment.Terminate()
+    finally:
+      self._UnlockAllMachines(experiment)
 
   def _PrintTable(self, experiment):
     self.l.LogOutput(TextResultsReport(experiment).GetReport())

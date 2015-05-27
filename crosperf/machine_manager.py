@@ -6,7 +6,6 @@
 
 import hashlib
 import image_chromeos
-import lock_machine
 import math
 import os.path
 import re
@@ -138,7 +137,7 @@ class CrosMachine(object):
 
   def _GetMachineID(self):
     command = "dump_vpd_log --full --stdout"
-    ret, if_out, _ = self.ce.CrosRunCommand(command, return_output=True,
+    _, if_out, _ = self.ce.CrosRunCommand(command, return_output=True,
                                             machine=self.name,
                                             chromeos_root=self.chromeos_root)
     b = if_out.splitlines()
@@ -172,6 +171,16 @@ class CrosMachine(object):
 
 
 class MachineManager(object):
+  """Lock, image and unlock machines locally for benchmark runs.
+
+  This class contains methods and calls to lock, unlock and image
+  machines and distribute machines to each benchmark run.  The assumption is
+  that all of the machines for the experiment have been globally locked
+  (using an AFE server) in the ExperimentRunner, but the machines still need
+  to be locally locked/unlocked (allocated to benchmark runs) to prevent
+  multiple benchmark runs within the same experiment from trying to use the
+  same machine at the same time.
+  """
   def __init__(self, chromeos_root, acquire_timeout, log_level, locks_dir,
                cmd_exec=None, lgr=None):
     self._lock = threading.RLock()
@@ -184,20 +193,11 @@ class MachineManager(object):
     self.machine_checksum_string = {}
     self.acquire_timeout = acquire_timeout
     self.log_level = log_level
-    self.locks_dir = locks_dir
+    self.locks_dir = None
     self.ce = cmd_exec or command_executer.GetCommandExecuter(
         log_level=self.log_level)
     self.logger = lgr or logger.GetLogger()
 
-    if self.locks_dir != lock_machine.Machine.LOCKS_DIR:
-      msg = ("WARNING:  If you use your own locks directory, there is no"
-             " guarantee that someone else might not hold a lock on the same"
-             " machine in a different locks directory.")
-      self.logger.LogOutput(msg)
-
-    if not os.path.isdir(self.locks_dir):
-      raise MissingLocksDirectory ("Cannot access locks directory: %s"
-                                   % self.locks_dir)
     self._initialized_machines = []
     self.chromeos_root = chromeos_root
 
@@ -215,6 +215,7 @@ class MachineManager(object):
     if not chromeos_root:
       chromeos_root = self.chromeos_root
     image_chromeos_args = [image_chromeos.__file__,
+                           "--no_lock",
                            "--chromeos_root=%s" % chromeos_root,
                            "--image=%s" % label.chromeos_image,
                            "--image_args=%s" % label.image_args,
@@ -275,19 +276,14 @@ class MachineManager(object):
       for m in self._machines:
         if m.name == cros_machine.name:
           return
-      locked = lock_machine.Machine(cros_machine.name,
-                                    self.locks_dir).Lock(True,
-                                                         sys.argv[0])
-      if locked:
-        self._machines.append(cros_machine)
-        command = "cat %s" % CHECKSUM_FILE
-        ret, out, _ = self.ce.CrosRunCommand(
-            command, return_output=True, chromeos_root=self.chromeos_root,
-            machine=cros_machine.name)
-        if ret == 0:
-          cros_machine.checksum = out.strip()
-      else:
-        self.logger.LogOutput("Couldn't lock: %s" % cros_machine.name)
+
+      self._machines.append(cros_machine)
+      command = "cat %s" % CHECKSUM_FILE
+      ret, out, _ = self.ce.CrosRunCommand(
+          command, return_output=True, chromeos_root=self.chromeos_root,
+          machine=cros_machine.name)
+      if ret == 0:
+        cros_machine.checksum = out.strip()
 
   # This is called from single threaded mode.
   def AddMachine(self, machine_name):
@@ -313,12 +309,6 @@ class MachineManager(object):
     with self._lock:
       self._machines = [m for m in self._machines
                         if m.name != machine_name]
-      res = lock_machine.Machine(machine_name,
-                                 self.locks_dir).Unlock(True)
-
-      if not res:
-        self.logger.LogError("Could not unlock machine: '%s'."
-                             % m.name)
 
   def ForceSameImageToAllMachines(self, label):
     machines = self.GetMachines(label)
@@ -420,16 +410,6 @@ class MachineManager(object):
           m.status = "Available"
           break
 
-  def Cleanup(self):
-    with self._lock:
-      # Unlock all machines.
-      for m in self._machines:
-        res = lock_machine.Machine(m.name, self.locks_dir).Unlock(True)
-
-        if not res:
-          self.logger.LogError("Could not unlock machine: '%s'."
-                               % m.name)
-
   def __str__(self):
     with self._lock:
       l = ["MachineManager Status:"]
@@ -502,10 +482,10 @@ class MockCrosMachine(CrosMachine):
 
 class MockMachineManager(MachineManager):
 
-  def __init__(self, chromeos_root, acquire_timeout, log_level, dummy_locks_dir):
+  def __init__(self, chromeos_root, acquire_timeout, log_level, locks_dir):
     super(MockMachineManager, self).__init__(chromeos_root, acquire_timeout,
                                              log_level,
-                                             lock_machine.Machine.LOCKS_DIR)
+                                             locks_dir)
 
   def _TryToLockMachine(self, cros_machine):
     self._machines.append(cros_machine)

@@ -9,6 +9,8 @@
 import os
 import time
 
+import afe_lock_machine
+
 from utils import logger
 from utils import misc
 
@@ -44,6 +46,7 @@ class Experiment(object):
     self.num_complete = 0
     self.num_run_complete = 0
     self.share_cache = share_cache
+    self.active_threads = None
 
     # We need one chromeos_root to run the benchmarks in, but it doesn't
     # matter where it is, unless the ABIs are different.
@@ -55,12 +58,20 @@ class Experiment(object):
       raise Exception("No chromeos_root given and could not determine one from "
                       "the image path.")
 
+    # This is a local directory, where the machine manager will keep track of
+    # which machines are available for which benchmark run.   The assumption is
+    # that all of the machines have been globally locked for this experiment,
+    # to keep other people/experiments from accessing them, but we still need
+    # the local locks directory to keep two or more benchmark runs within the
+    # same experiment from trying to use the same machine at the same time.
+    local_locks_directory = os.path.join(self.working_directory,
+                                         "local_locks")
     if test_flag.GetTestMode():
       self.machine_manager = MockMachineManager(chromeos_root, acquire_timeout,
                                                 log_level, locks_directory)
     else:
       self.machine_manager = MachineManager(chromeos_root, acquire_timeout,
-                                            log_level, locks_directory)
+                                            log_level, local_locks_directory)
     self.l = logger.GetLogger(log_dir)
 
     for machine in remote:
@@ -134,4 +145,14 @@ class Experiment(object):
       benchmark_run.SetCacheConditions(cache_conditions)
 
   def Cleanup(self):
-    self.machine_manager.Cleanup()
+    """Make sure all machines are unlocked."""
+    all_machines = self.remote
+    for l in self.labels:
+      all_machines += l.remote
+    lock_mgr = afe_lock_machine.AFELockManager(all_machines, "",
+                                               self.labels[0].chromeos_root,
+                                               None)
+    machine_states = lock_mgr.GetMachineStates("unlock")
+    for k, state in machine_states.iteritems():
+      if state["locked"]:
+        lock_mgr.UpdateLockInAFE(False, k)

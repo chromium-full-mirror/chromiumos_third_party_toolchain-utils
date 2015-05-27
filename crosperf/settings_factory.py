@@ -138,8 +138,7 @@ class GlobalSettings(Settings):
                             " separated by a \",\""))
     self.AddField(TextField("results_dir", default="",
                             description="The results dir"))
-    default_locks_dir = lock_machine.Machine.LOCKS_DIR
-    self.AddField(TextField("locks_dir", default=default_locks_dir,
+    self.AddField(TextField("locks_dir", default="",
                             description="An alternate directory to use for "
                             "storing/checking machine locks.\n"
                             "WARNING:  If you use your own locks directory, "

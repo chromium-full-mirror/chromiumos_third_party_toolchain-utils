@@ -16,8 +16,6 @@ import sys
 import time
 import traceback
 
-import lock_machine
-
 import command_executer
 import logger
 
@@ -300,43 +298,6 @@ def GetAllImages(chromeos_root, board):
   return out.splitlines()
 
 
-def AcquireLock(lock_file, timeout=1200):
-  """Acquire a lock with timeout."""
-  start_time = time.time()
-  locked = False
-  abs_path = os.path.abspath(lock_file)
-  dir_path = os.path.dirname(abs_path)
-  sleep_time = min(10, timeout/10.0)
-  reason = "pid: {0}, commad: {1}".format(os.getpid(),
-                                          sys.argv[0])
-  if not os.path.exists(dir_path):
-    try:
-      with lock_machine.FileCreationMask(0002):
-        os.makedirs(dir_path)
-    except OSError:
-      print "Cannot create dir {0}, exiting...".format(dir_path)
-      exit(0)
-  while True:
-    locked = (lock_machine.Lock(lock_file).NonBlockingLock(True, reason))
-    if locked:
-      break
-    time.sleep(sleep_time)
-    if time.time() - start_time > timeout:
-      logger.GetLogger().LogWarning(
-          "Could not acquire lock on this file: {0} within {1} seconds."
-          "Manually remove the file if you think the lock is stale"
-          .format(abs_path, timeout))
-      break
-  return locked
-
-
-def ReleaseLock(lock_file):
-  lock_file = os.path.abspath(lock_file)
-  ret = lock_machine.Lock(lock_file).Unlock(True)
-  assert ret, ("Could not unlock {0},"
-               "Please remove it manually".format(lock_file))
-
-
 def IsFloat(text):
   if text is None:
     return False
@@ -592,7 +553,8 @@ def BooleanPrompt(prompt='Do you want to continue?', default=True,
     except KeyboardInterrupt:
       # If the user hits CTRL+C, just exit the process.
       print()
-      Die('CTRL+C detected; exiting')
+      print 'CTRL+C detected; exiting'
+      sys.exit(1)
 
     if not response:
       return default
@@ -602,4 +564,3 @@ def BooleanPrompt(prompt='Do you want to continue?', default=True,
       # common prefix between the two...
     elif false_value.startswith(response):
       return False
-
