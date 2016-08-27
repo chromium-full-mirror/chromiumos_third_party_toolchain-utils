@@ -110,7 +110,7 @@ class HotFunctionsProcessor(object):
 
       for statistic in statistics_reader:
         function_name = statistic['function']
-        file_name = statistic['file']
+        file_name = os.path.normpath(statistic['file'])
         dso_name = statistic['dso']
         inclusive_count = statistic['inclusive_count']
 
@@ -153,7 +153,10 @@ class HotFunctionsProcessor(object):
     pprof_files = os.listdir(pprof_path)
     cwp_statistics = self.ParseCWPStatistics(cwp_functions_file)
     function_statistic_regex = re.compile(r'\S+\s+\S+%\s+\S+%\s+\S+\s+\S+%')
-    function_regex = re.compile(r'[a-zA-Z0-9-/_:.~\[\]]+[ a-zA-Z0-9-/_~:.]*')
+    function_regex = re.compile(r'[a-zA-Z0-9-_:.~\[\]]+')
+    # TODO(evelinad): Consider the case where the file name can have other
+    # characters.
+    file_regex = re.compile(r'[a-zA-Z0-9-/_.]+')
 
     for pprof_file in pprof_files:
       # In the pprof output, the statistics of the functions start from the
@@ -168,15 +171,21 @@ class HotFunctionsProcessor(object):
           function_statistic_regex.search(pprof_statistic)
         function_statistic = \
           ','.join(function_statistic_match.group(0).split())
-        function_match = function_regex.search(pprof_statistic[
-            function_statistic_match.end():])
-        function = ','.join(function_match.group(0).split())
+        lookup_index = function_statistic_match.end()
+        function_match = function_regex.search(pprof_statistic[lookup_index:])
+        function_name = function_match.group(0)
+        lookup_index += function_match.end()
+        file_match = file_regex.search(pprof_statistic[lookup_index:])
+        if file_match:
+          key = ",".join([function_name, os.path.normpath(file_match.group(0))])
+        else:
+          key = function_name
 
-        if function in cwp_statistics:
-          cwp_statistic = cwp_statistics[function]
-          output_lines.append(','.join([function, cwp_statistic[0],
+        if key in cwp_statistics:
+          cwp_statistic = cwp_statistics[key]
+          output_lines.append(','.join([key, cwp_statistic[0],
                                         function_statistic]))
-          cwp_statistics[function] = (cwp_statistic[0], self.COMMON_FUNCTION)
+          cwp_statistics[key] = (cwp_statistic[0], self.COMMON_FUNCTION)
 
       with open(os.path.join(common_functions_path, pprof_file), 'w') \
         as output_file:

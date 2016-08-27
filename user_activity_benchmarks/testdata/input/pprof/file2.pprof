@@ -4,7 +4,7 @@ Type: instructions_event
 Showing nodes accounting for 48939666671, 42.14% of 116136877744 total
 Dropped 35196 nodes (cum <= 580684388)
       flat  flat%   sum%        cum   cum%
-      4585860529  3.95%  3.95% 13583834527 11.70%  blink::InvalidationSet::invalidatesElement /home/chrome-bot/chrome_root/src/third_party/WebKit/Source/core/css/invalidation/InvalidationSet.cpp
+      4585860529  3.95%  3.95% 13583834527 11.70%  blink::InvalidationSet::invalidatesElement /home/chrome-bot/chrome_root/src/third_party/WebKit/Source/core/css/invalidation/a/b/../../InvalidationSet.cpp
       3791928512  3.27%  7.21% 35145646088 30.26%  blink::StyleInvalidator::invalidate /home/chrome-bot/chrome_root/src/third_party/WebKit/Source/core/css/invalidation/StyleInvalidator.cpp
       2871318565  2.47%  9.69% 2979878602  2.57%  blink::StyleInvalidator::RecursionCheckpoint::~RecursionCheckpoint /home/chrome-bot/chrome_root/src/third_party/WebKit/Source/core/css/invalidation/StyleInvalidator.h (inline)
       1914657964  1.65% 11.33% 2164475253  1.86%  WTF::StringImpl::lower /home/chrome-bot/chrome_root/src/third_party/WebKit/Source/wtf/text/StringImpl.cpp
