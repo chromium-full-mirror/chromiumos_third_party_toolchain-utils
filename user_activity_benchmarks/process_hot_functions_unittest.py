@@ -51,16 +51,33 @@ class HotFunctionsProcessorTest(unittest.TestCase):
     self._common_functions_path = ''
     self._expected_common_functions_path = 'testdata/expected/pprof_common'
     self._extra_cwp_functions_file = ''
+    self._cwp_function_groups_file = 'testdata/input/cwp_function_groups'
+    self._cwp_function_groups_statistics_file = 'dummy'
+    self._cwp_function_groups_file_prefix = 'dummy'
 
-  def _CreateHotFunctionsProcessor(self, extra_cwp_functions_file):
+  def _CreateHotFunctionsProcessor(self,
+                                   extra_cwp_functions_file,
+                                   cwp_function_groups_file=None,
+                                   cwp_function_groups_statistics_file=None,
+                                   cwp_function_groups_file_prefix=None):
     return HotFunctionsProcessor(self._pprof_path, self._cwp_functions_file,
                                  self._common_functions_path,
-                                 extra_cwp_functions_file)
+                                 extra_cwp_functions_file,
+                                 cwp_function_groups_file,
+                                 cwp_function_groups_statistics_file,
+                                 cwp_function_groups_file_prefix)
+
+  def checkFileContents(self, file_name, expected_content_lines):
+    with open(file_name, 'r') as input_file:
+      result_content_lines = input_file.readlines()
+    self.assertListEqual(expected_content_lines, result_content_lines)
 
   @mock.patch.object(HotFunctionsProcessor, 'ExtractCommonFunctions')
   @mock.patch.object(HotFunctionsProcessor, 'ExtractExtraFunctions')
-  def testProcessHotFunctions(self, common_functions_method,
-                              extra_functions_method):
+  @mock.patch.object(HotFunctionsProcessor, 'GroupExtraFunctions')
+  def testProcessHotFunctionsNoGroupping(self, group_functions_method,
+                                         extra_functions_method,
+                                         common_functions_method):
     hot_functions_processor = self._CreateHotFunctionsProcessor(
         self._extra_cwp_functions_file)
 
@@ -70,6 +87,27 @@ class HotFunctionsProcessorTest(unittest.TestCase):
     self.assertTrue(extra_functions_method.called)
     self.assertEqual(common_functions_method.call_count, 1)
     self.assertEqual(extra_functions_method.call_count, 1)
+    self.assertFalse(group_functions_method.called)
+
+  @mock.patch.object(HotFunctionsProcessor, 'ExtractCommonFunctions')
+  @mock.patch.object(HotFunctionsProcessor, 'ExtractExtraFunctions')
+  @mock.patch.object(HotFunctionsProcessor, 'GroupExtraFunctions')
+  def testProcessHotFunctionsGroupping(self, group_functions_method,
+                                       extra_functions_method,
+                                       common_functions_method):
+    hot_functions_processor = self._CreateHotFunctionsProcessor(
+        self._extra_cwp_functions_file, self._cwp_function_groups_file,
+        self._cwp_function_groups_statistics_file,
+        self._cwp_function_groups_file_prefix)
+
+    hot_functions_processor.ProcessHotFunctions()
+
+    self.assertTrue(common_functions_method.called)
+    self.assertTrue(extra_functions_method.called)
+    self.assertEqual(common_functions_method.call_count, 1)
+    self.assertEqual(extra_functions_method.call_count, 1)
+    self.assertTrue(group_functions_method.called)
+    self.assertEqual(group_functions_method.call_count, 1)
 
   def testParseCWPStatistics(self):
     cwp_statistics = {'dummy_method1,dummy_file1': ('dummy_object1,1', 0),
@@ -102,11 +140,9 @@ class HotFunctionsProcessorTest(unittest.TestCase):
 
     for expected_file_name, result_file_name in \
       zip(expected_files, result_files):
-      with open(expected_file_name) as expected_file, \
-        open(result_file_name) as result_file:
+      with open(expected_file_name) as expected_file:
         expected_output_lines = expected_file.readlines()
-        result_output_lines = result_file.readlines()
-        self.assertListEqual(expected_output_lines, result_output_lines)
+        self.checkFileContents(result_file_name, expected_output_lines)
     shutil.rmtree(common_functions_path)
 
   def testExtractExtraFunctions(self):
@@ -115,19 +151,72 @@ class HotFunctionsProcessorTest(unittest.TestCase):
                       'dummy_method3,dummy_file3': ('dummy_object3,3', 1),
                       'dummy_method4,dummy_file4': ('dummy_object4,4', 0)}
     expected_output_lines = ['function,file,dso,inclusive_count\n',
-                             'dummy_method1,dummy_file1,dummy_object1,1\n',
-                             'dummy_method4,dummy_file4,dummy_object4,4']
+                             'dummy_method4,dummy_file4,dummy_object4,4\n',
+                             'dummy_method1,dummy_file1,dummy_object1,1']
     temp_file, temp_filename = tempfile.mkstemp()
-    hot_functions_processor = self._CreateHotFunctionsProcessor(temp_filename)
     os.close(temp_file)
+    hot_functions_processor = self._CreateHotFunctionsProcessor(temp_filename)
 
     hot_functions_processor.ExtractExtraFunctions(cwp_statistics, temp_filename)
-
-    with open(temp_filename) as result_file:
-      result_output_lines = result_file.readlines()
-
-    self.assertListEqual(result_output_lines, expected_output_lines)
+    self.checkFileContents(temp_filename, expected_output_lines)
     os.remove(temp_filename)
+
+  def testParseFunctionGroups(self):
+    cwp_function_groups_lines = ['group1 /a\n', 'group2 /b\n', 'group3 /c\n',
+                                 'group4 /d\n']
+    expected_output = [('group1', '/a', 0, []), ('group2', '/b', 0, []),
+                       ('group3', '/c', 0, []), ('group4', '/d', 0, [])]
+    result = HotFunctionsProcessor.ParseFunctionGroups(
+        cwp_function_groups_lines)
+    self.assertListEqual(expected_output, result)
+
+  def testGroupExtraFunctions(self):
+    cwp_statistics = {'dummy_method1,/a/b': ('dummy_object1,1', 1),
+                      'dummy_method2,/c/d': ('dummy_object2,2', 0),
+                      'dummy_method3,/a/b': ('dummy_object3,3', 0),
+                      'dummy_method4,/c/d': ('dummy_object4,4', 1),
+                      'dummy_method5,/a/b': ('dummy_object5,5', 0),
+                      'dummy_method6,/e': ('dummy_object6,6', 0),
+                      'dummy_method7,/c/d': ('dummy_object7,7', 0),
+                      'dummy_method8,/e': ('dummy_object8,8', 0)}
+    cwp_groups_statistics_file, \
+        cwp_groups_statistics_filename = tempfile.mkstemp()
+
+    os.close(cwp_groups_statistics_file)
+
+    cwp_groups_file_path = tempfile.mkdtemp()
+    cwp_groups_file_prefix = os.path.join(cwp_groups_file_path, 'dummy')
+    hot_functions_processor = self._CreateHotFunctionsProcessor(
+        self._extra_cwp_functions_file)
+
+    hot_functions_processor.GroupExtraFunctions(cwp_statistics,
+                                                cwp_groups_file_prefix,
+                                                self._cwp_function_groups_file,
+                                                cwp_groups_statistics_filename)
+
+    expected_group_ab_lines = ['function,file,dso,inclusive_count\n',
+                               'dummy_method5,/a/b,dummy_object5,5\n',
+                               'dummy_method3,/a/b,dummy_object3,3']
+    expected_group_cd_lines = ['function,file,dso,inclusive_count\n',
+                               'dummy_method7,/c/d,dummy_object7,7\n',
+                               'dummy_method2,/c/d,dummy_object2,2']
+    expected_group_e_lines = ['function,file,dso,inclusive_count\n',
+                              'dummy_method8,/e,dummy_object8,8\n',
+                              'dummy_method6,/e,dummy_object6,6']
+    expected_group_statistics_lines = ['group,shared_path,inclusive_count\n',
+                                       'e,/e,14\n', 'cd,/c/d,9\n', 'ab,/a/b,8']
+
+    self.checkFileContents('%sab' % (cwp_groups_file_prefix,),
+                           expected_group_ab_lines)
+    self.checkFileContents('%scd' % (cwp_groups_file_prefix,),
+                           expected_group_cd_lines)
+    self.checkFileContents('%se' % (cwp_groups_file_prefix,),
+                           expected_group_e_lines)
+    self.checkFileContents(cwp_groups_statistics_filename,
+                           expected_group_statistics_lines)
+
+    shutil.rmtree(cwp_groups_file_path)
+    os.remove(cwp_groups_statistics_filename)
 
 
 if __name__ == '__main__':
