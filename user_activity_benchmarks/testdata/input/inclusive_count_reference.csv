@@ -1,0 +1,8 @@
+function,file,inclusive_count_fraction
+func_f,/a/b/file_f,1
+func_g,/a/b/file_g,2
+func_g,/a/b/../../a/b/file_g,2.4
+func_h,/c/d/file_h,3
+func_i,/c/d/file_i,4
+func_j,/e/file_j,5
+func_l,/e/file_l,6
