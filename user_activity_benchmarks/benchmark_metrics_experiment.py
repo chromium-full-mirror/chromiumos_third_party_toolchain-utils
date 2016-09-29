@@ -23,12 +23,15 @@ the functions matching the group. The output is stored in the file
 cwp_function_groups_statistics_file.
 """
 
-import argparse
 from collections import defaultdict
+
+import argparse
 import csv
 import os
 import sys
+
 import benchmark_metrics
+import utils
 
 
 class MetricsExperiment(object):
@@ -65,93 +68,6 @@ class MetricsExperiment(object):
         cwp_function_groups_statistics_file
     self._cwp_function_statistics_file = cwp_function_statistics_file
 
-  @staticmethod
-  def ParsePairwiseInclusiveStatisticsFile(file_name):
-    """Parses the pairwise inclusive statistics files.
-
-    A line of the file should contain a pair of a parent and a child function,
-    concatenated by a ;;, the name of the file where the child function is
-    defined and the inclusive count fractions of the pair of functions out of
-    the total amount of inclusive count values.
-
-    Args:
-      file_name: The file containing the pairwise inclusive statistics of the
-      CWP functions.
-
-    Returns:
-      A dict containing the statistics of the parent functions and each of
-      their child functions. The key of the dict is the name of the parent
-      function. The value is a dict having as a key the name of the child
-      function with its file name separated by a ',' and as a value the
-      inclusive count fraction of the child function.
-    """
-    pairwise_inclusive_statistics = defaultdict(lambda: defaultdict(float))
-
-    with open(file_name) as \
-        pairwise_inclusive_statistics_file:
-      statistics_reader = csv.DictReader(
-          pairwise_inclusive_statistics_file, delimiter=',')
-      for statistic in statistics_reader:
-        parent_function_name, child_function_name = \
-            statistic['parent_child_functions'].split(';;')
-        child_function_file_name = \
-            os.path.normpath(statistic['child_function_file'])
-        inclusive_count_fraction = \
-            float(statistic['inclusive_count_fraction'])
-
-        if all([parent_function_name, child_function_name, \
-                inclusive_count_fraction]):
-
-          # There might be situations where a child function appears in
-          # multiple files or objects. Such situations can occur when in the
-          # Dremel queries there are not specified the Chrome OS version and the
-          # name of the board (i.e the files can belong to different kernel or
-          # library versions), when the child function is a template function
-          # that is declared in a header file or there are name collisions
-          # between multiple executable objects.
-          # If a pair of child and parent functions appears multiple times, we
-          # add their inclusive count values.
-          child_function_key = ','.join([child_function_name,
-                                         child_function_file_name])
-          pairwise_inclusive_statistics[parent_function_name]\
-              [child_function_key] += inclusive_count_fraction
-
-    return pairwise_inclusive_statistics
-
-  @staticmethod
-  def ParseInclusiveStatisticsFile(inclusive_statistics_file_name):
-    """Parses the inclusive statistics files.
-
-    Args:
-      inclusive_statistics_file_name: The file containing the inclusive
-        statistics of the CWP functions.
-
-    Returns:
-      A dict having as a key the function name and file where the function is
-      defined separated by a ',' and as a value the inclusive count fraction.
-    """
-    inclusive_statistics = defaultdict(float)
-
-    with open(inclusive_statistics_file_name) as inclusive_statistics_file:
-      statistics_reader = \
-          csv.DictReader(inclusive_statistics_file, delimiter=',')
-
-      for statistic in statistics_reader:
-        function_name = statistic['function']
-        file_name = os.path.normpath(statistic['file'])
-        inclusive_count_fraction = \
-            float(statistic['inclusive_count_fraction'])
-
-        # There might be situations where a function appears in multiple files
-        # or objects. Such situations can occur when in the Dremel queries there
-        # are not specified the Chrome OS version and the name of the board (i.e
-        # the files can belong to different kernel or library versions).
-        if all([function_name, file_name, inclusive_count_fraction]):
-          parent_function_key = ','.join([function_name, file_name])
-          inclusive_statistics[parent_function_key] += inclusive_count_fraction
-
-    return inclusive_statistics
-
   def PerformComputation(self):
     """Does the benchmark metrics experimental computation.
 
@@ -168,27 +84,28 @@ class MetricsExperiment(object):
     """
 
     inclusive_statistics_reference = \
-        self.ParseInclusiveStatisticsFile(self._cwp_inclusive_reference)
+        utils.ParseCWPInclusiveCountFile(self._cwp_inclusive_reference)
     inclusive_statistics_test = \
-        self.ParseInclusiveStatisticsFile(self._cwp_inclusive_test)
+        utils.ParseCWPInclusiveCountFile(self._cwp_inclusive_test)
     pairwise_inclusive_statistics_reference = \
-        self.ParsePairwiseInclusiveStatisticsFile(
+        utils.ParseCWPPairwiseInclusiveCountFile(
             self._cwp_pairwise_inclusive_reference)
     pairwise_inclusive_statistics_test = \
-        self.ParsePairwiseInclusiveStatisticsFile(
+        utils.ParseCWPPairwiseInclusiveCountFile(
             self._cwp_pairwise_inclusive_test)
     parent_function_statistics = {}
 
-    with open(self._cwp_function_groups_file, 'r') as input_file:
-      cwp_function_groups = [line.split() for line in input_file]
+    with open(self._cwp_function_groups_file) as input_file:
+      cwp_function_groups = utils.ParseFunctionGroups(input_file.readlines())
 
-    for parent_function_key, parent_function_fraction_test \
+    for parent_function_key, parent_function_statistics_test \
         in inclusive_statistics_test.iteritems():
       parent_function_name, parent_function_file_name = \
           parent_function_key.split(',')
+      parent_function_fraction_test = parent_function_statistics_test[2]
 
       parent_function_fraction_reference = \
-          inclusive_statistics_reference.get(parent_function_key, 0.0)
+          inclusive_statistics_reference[parent_function_key][2]
 
       child_functions_statistics_test = \
           pairwise_inclusive_statistics_test.get(parent_function_name, {})

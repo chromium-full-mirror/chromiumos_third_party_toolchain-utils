@@ -5,12 +5,12 @@
 # found in the LICENSE file.
 """Unit tests for the benchmark_metrics_experiment module."""
 
-from benchmark_metrics_experiment import MetricsExperiment
-
 import mock
 import os
 import tempfile
 import unittest
+
+from benchmark_metrics_experiment import MetricsExperiment
 
 
 class MetricsExperimentTest(unittest.TestCase):
@@ -27,63 +27,10 @@ class MetricsExperimentTest(unittest.TestCase):
     self._inclusive_count_reference_file = \
         'testdata/input/inclusive_count_reference.csv'
     self._cwp_function_groups_file = \
-        'testdata/input/cwp_function_groups'
-
-  def testParseInclusiveStatisticsFile(self):
-    expected_inclusive_statistics_test = {
-        'func_f,/a/b/file_f': 2.3,
-        'func_g,/a/b/file_g': 2.2,
-        'func_h,/c/d/file_h': 3.3,
-        'func_i,/c/d/file_i': 4.4,
-        'func_j,/e/file_j': 5.5,
-        'func_k,/e/file_k': 6.6
-    }
-    expected_inclusive_statistics_reference = {
-        'func_f,/a/b/file_f': 1.0,
-        'func_g,/a/b/file_g': 4.4,
-        'func_h,/c/d/file_h': 3.0,
-        'func_i,/c/d/file_i': 4.0,
-        'func_j,/e/file_j': 5.0,
-        'func_l,/e/file_l': 6.0
-    }
-    result_inclusive_statistics_test = \
-        MetricsExperiment.ParseInclusiveStatisticsFile(
-            self._inclusive_count_test_file)
-    result_inclusive_statistics_reference = \
-        MetricsExperiment.ParseInclusiveStatisticsFile(
-            self._inclusive_count_reference_file)
-    self.assertEqual(result_inclusive_statistics_test,
-                     expected_inclusive_statistics_test)
-    self.assertEqual(result_inclusive_statistics_reference,
-                     expected_inclusive_statistics_reference)
-
-  def testParsePairwiseInclusiveStatisticsFile(self):
-    expected_pairwise_inclusive_statistics_test = {
-        'func_f': {'func_g,/a/b/file_g2': 0.01,
-                   'func_h,/c/d/file_h': 0.02,
-                   'func_i,/c/d/file_i': 0.03},
-        'func_g': {'func_j,/e/file_j': 0.4,
-                   'func_m,/e/file_m': 0.6}
-    }
-    expected_pairwise_inclusive_statistics_reference = {
-        'func_f': {'func_g,/a/b/file_g': 0.1,
-                   'func_h,/c/d/file_h': 0.2,
-                   'func_i,/c/d/file_i': 0.3},
-        'func_g': {'func_j,/e/file_j': 0.4}
-    }
-    result_pairwise_inclusive_statistics_test = \
-        MetricsExperiment.ParsePairwiseInclusiveStatisticsFile(
-            self._pairwise_inclusive_count_test_file)
-    result_pairwise_inclusive_statistics_reference = \
-        MetricsExperiment.ParsePairwiseInclusiveStatisticsFile(
-            self._pairwise_inclusive_count_reference_file)
-    self.assertEqual(result_pairwise_inclusive_statistics_test,
-                     expected_pairwise_inclusive_statistics_test)
-    self.assertEqual(result_pairwise_inclusive_statistics_reference,
-                     expected_pairwise_inclusive_statistics_reference)
+        'testdata/input/cwp_function_groups.txt'
 
   def _CheckFileContents(self, file_name, expected_content_lines):
-    with open(file_name, 'r') as input_file:
+    with open(file_name) as input_file:
       result_content_lines = input_file.readlines()
       self.assertListEqual(expected_content_lines, result_content_lines)
 
