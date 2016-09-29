@@ -30,6 +30,7 @@ SELECT
   replace(frame.function_name, \", \", \"; \") AS function,
   frame.filename AS file,
   frame.load_module_path AS dso,
+  SUM(frame.inclusive_count) AS inclusive_count,
   SUM(frame.inclusive_count)/ANY_VALUE(total.value) AS inclusive_count_fraction
 FROM
   $TABLE table,
@@ -64,7 +65,7 @@ SELECT
     replace(frame.function_name, \", \", \"; \")) AS parent_child_functions,
   frame.filename AS child_function_file,
   frame.load_module_path AS child_function_dso,
-  SUM(frame.inclusive_count)/ANY_VALUE(total.value) AS inclusive_count_fraction
+  SUM(frame.inclusive_count)/ANY_VALUE(total.value) AS inclusive_count
 FROM
   $TABLE table,
   table.frame frame
@@ -82,7 +83,7 @@ GROUP BY
   child_function_file,
   child_function_dso
 HAVING
-  inclusive_count_fraction > 0.0
+  inclusive_count > 0.0
 ORDER BY
-  inclusive_count_fraction DESC;
+  inclusive_count DESC;
 " | dremel --output=csv > "$PAIRWISE_INCLUSIVE_OUTPUT_FILE"
