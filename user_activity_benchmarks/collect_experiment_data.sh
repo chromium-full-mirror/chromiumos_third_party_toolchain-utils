@@ -8,24 +8,27 @@
 
 set -e
 
-if [ "$#" -ne 6 ]; then
-  echo "USAGE: collect_validation_data.sh cwp_table board board_arch " \
-  "Chrome_OS_release inclusive_output_file pairwise_inclusive_output_file"
+if [ "$#" -ne 7 ]; then
+  echo "USAGE: collect_experiment_data.sh cwp_table board board_arch " \
+  "Chrome_version Chrome_OS_version inclusive_output_file " \
+  "pairwise_inclusive_output_file"
   exit 1
 fi
 
 readonly TABLE=$1
-readonly INCLUSIVE_OUTPUT_FILE=$5
-readonly PAIRWISE_INCLUSIVE_OUTPUT_FILE=$6
+readonly INCLUSIVE_OUTPUT_FILE=$6
+readonly PAIRWISE_INCLUSIVE_OUTPUT_FILE=$7
 readonly PERIODIC_COLLECTION=1
-readonly WHERE_CLAUSE_SPECIFICATIONS="meta.cros.board = '$2' AND " \
-    "meta.cros.cpu_architecture = '$3' AND meta.cros.chrome_version LIKE " \
-    "'%$4%' AND meta.cros.collection_info.trigger_event = $PERIODIC_COLLECTION"
+readonly WHERE_CLAUSE_SPECIFICATIONS="meta.cros.board = '$2' AND  \
+  meta.cros.cpu_architecture = '$3' AND  \
+  meta.cros.chrome_version LIKE '%$4%' AND  \
+  meta.cros.version = '$5' AND \
+  meta.cros.collection_info.trigger_event = $PERIODIC_COLLECTION AND \
+  session.total_count > 2000"
 
 # Collects the function, with its file, the object and inclusive count
 # fraction out of the total amount of inclusive count values.
-echo "set sql_dialect GoogleSQL;
-
+echo "
 SELECT
   replace(frame.function_name, \", \", \"; \") AS function,
   frame.filename AS file,
@@ -53,13 +56,13 @@ HAVING
   inclusive_count_fraction > 0.0
 ORDER BY
   inclusive_count_fraction DESC;
-" | dremel --output=csv > "$INCLUSIVE_OUTPUT_FILE"
+" | dremel  --sql_dialect=GoogleSQL --min_completion_ratio=1.0 --output=csv \
+  > "$INCLUSIVE_OUTPUT_FILE"
 
 # Collects the pair of parent and child functions, with the file and object
 # where the child function is declared and the inclusive count fraction of the
 # pair out of the total amount of inclusive count values.
-echo "set sql_dialect GoogleSQL;
-
+echo "
 SELECT
   CONCAT(replace(frame.parent_function_name, \", \", \"; \"), \";;\",
     replace(frame.function_name, \", \", \"; \")) AS parent_child_functions,
@@ -86,4 +89,5 @@ HAVING
   inclusive_count > 0.0
 ORDER BY
   inclusive_count DESC;
-" | dremel --output=csv > "$PAIRWISE_INCLUSIVE_OUTPUT_FILE"
+" | dremel --sql_dialect=GoogleSQL --min_completion_ratio=1.0 --output=csv > \
+  "$PAIRWISE_INCLUSIVE_OUTPUT_FILE"
