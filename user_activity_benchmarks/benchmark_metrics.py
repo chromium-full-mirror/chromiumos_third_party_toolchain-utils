@@ -295,7 +295,7 @@ def ComputeScoreForBenchmarkSet(set_function_metrics, cwp_functions,
   groups_scores = defaultdict(lambda: (0.0, 0.0))
 
   for group_name, function_scores in set_unique_functions.iteritems():
-    group_function_count = len(function_scores)
+    group_function_count = float(len(cwp_functions[group_name]))
     group_score = sum(function_scores.itervalues())
     total_score += group_score
     groups_scores[group_name] = {
