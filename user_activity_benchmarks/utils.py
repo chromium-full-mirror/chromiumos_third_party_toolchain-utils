@@ -98,6 +98,81 @@ def MakePprofFunctionKey(function_and_file_name):
 
   return MakeCWPAndPprofFileNamesConsistent(function_and_file_name)
 
+
+def ComputeCWPCummulativeInclusiveStatistics(cwp_inclusive_count_statistics):
+  """Computes the cumulative inclusive count value of a function.
+
+  A function might appear declared in multiple files or objects. When
+  computing the fraction of the inclusive count value from a child function to
+  the parent function, we take into consideration the sum of the
+  inclusive_count
+  count values from all the ocurences of that function.
+
+  Args:
+    cwp_inclusive_count_statistics: A dict containing the inclusive count
+    statistics extracted by the ParseCWPInclusiveCountFile method.
+
+  Returns:
+    A dict having as a ket the name of the function and as a value the sum of
+    the inclusive count values of the occurences of the functions from all
+    the files and objects.
+  """
+  cwp_inclusive_count_statistics_cumulative = defaultdict(int)
+
+  for function_key, function_statistics \
+      in cwp_inclusive_count_statistics.iteritems():
+    function_name, _ = function_key.split(',')
+    cwp_inclusive_count_statistics_cumulative[function_name] += \
+        function_statistics[1]
+
+  return cwp_inclusive_count_statistics_cumulative
+
+def ComputeCWPChildFunctionsFractions(cwp_inclusive_count_statistics_cumulative,
+                                      cwp_pairwise_inclusive_count_statistics):
+  """Computes the fractions of the inclusive count values for child functions.
+
+  The fraction represents the inclusive count value of a child function over
+  the one of the parent function.
+
+  Args:
+    cwp_inclusive_count_statistics_cumulative: A dict containing the
+      cumulative inclusive count values of the CWP functions.
+    cwp_pairwise_inclusive_count_statistics: A dict containing the inclusive
+      count statistics for pairs of parent and child functions. The key is the
+      parent function. The value is a dict with the key the name of the child
+      function and the file name, comma separated, and the value is the
+      inclusive count value of the pair of parent and child functions.
+
+  Returns:
+      A dict containing the inclusive count statistics for pairs of parent
+      and child functions. The key is the parent function. The value is a
+      dict with the key the name of the child function and the file name,
+      comma separated, and the value is the inclusive count fraction of the
+      child function out of the parent function.
+  """
+
+  pairwise_inclusive_count_fractions = {}
+
+  for parent_function_key, child_functions_metrics in \
+      cwp_pairwise_inclusive_count_statistics.iteritems():
+    child_functions_fractions = {}
+    parent_function_inclusive_count = \
+    cwp_inclusive_count_statistics_cumulative.get(parent_function_key, 0.0)
+
+    if parent_function_key in cwp_inclusive_count_statistics_cumulative:
+      for child_function_key, child_function_inclusive_count \
+          in child_functions_metrics.iteritems():
+        child_functions_fractions[child_function_key] = \
+           child_function_inclusive_count / parent_function_inclusive_count
+    else:
+      for child_function_key, child_function_inclusive_count \
+          in child_functions_metrics.iteritems():
+        child_functions_fractions[child_function_key] = 0.0
+    pairwise_inclusive_count_fractions[parent_function_key] = \
+        child_functions_fractions
+
+  return pairwise_inclusive_count_fractions
+
 def ParseFunctionGroups(cwp_function_groups_lines):
   """Parses the contents of the function groups file.
 
