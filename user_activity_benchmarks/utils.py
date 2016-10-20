@@ -21,8 +21,8 @@ EXTRA_FUNCTION = 'extra'
 PARENT_CHILD_FUNCTIONS_SEPARATOR = ';;'
 # List of pairs of strings used for make substitutions in file names to make
 # CWP and pprof data consistent.
-FILE_NAME_REPLACING_PAIR_STRINGS = [('/build/gnawty', '/build/BOARD'),
-                                    ('/build/amd64-generic', '/build/BOARD'),
+FILE_NAME_REPLACING_PAIR_STRINGS = [('gnawty', 'BOARD'),
+                                    ('amd64-generic', 'BOARD'),
                                     (' ../sysdeps', ',sysdeps'),
                                     (' ../nptl', ',nptl'),
                                     ('  aes-x86_64.s', ',aes-x86_64.s'),
