@@ -5,7 +5,6 @@
 # found in the LICENSE file.
 """Unit tests for the benchmark_metrics_experiment module."""
 
-import mock
 import os
 import tempfile
 import unittest
@@ -43,20 +42,21 @@ class MetricsExperimentTest(unittest.TestCase):
 
     os.close(function_statistics_file)
 
+
     expected_group_statistics_lines = \
         ['group,file_path,function_count,distance_cum,distance_avg,score_cum,'
          'score_avg\n',
-         'ab,/a/b,2.0,3.16,1.58,7.52435897436,3.76217948718\n',
+         'ab,/a/b,2.0,3.01,1.505,8.26344228895,4.13172114448\n',
          'e,/e,2.0,2.0,1.0,27.5,13.75\n',
          'cd,/c/d,2.0,2.0,1.0,27.5,13.75']
     expected_function_statistics_lines = \
         ['function,file,distance,score\n',
          'func_i,/c/d/file_i,1.0,17.6\n',
          'func_j,/e/file_j,1.0,27.5\n',
-         'func_f,/a/b/file_f,1.56,1.47435897436\n',
+         'func_f,/a/b/file_f,1.59,1.4465408805\n',
          'func_h,/c/d/file_h,1.0,9.9\n',
          'func_k,/e/file_k,1.0,0.0\n',
-         'func_g,/a/b/file_g,1.6,6.05']
+         'func_g,/a/b/file_g,1.42,6.81690140845']
     metric_experiment = \
         MetricsExperiment(self._pairwise_inclusive_count_reference_file,
                           self._pairwise_inclusive_count_test_file,

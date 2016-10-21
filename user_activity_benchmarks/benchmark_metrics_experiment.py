@@ -23,11 +23,7 @@ the functions matching the group. The output is stored in the file
 cwp_function_groups_statistics_file.
 """
 
-from collections import defaultdict
-
 import argparse
-import csv
-import os
 import sys
 
 import benchmark_metrics
@@ -85,14 +81,28 @@ class MetricsExperiment(object):
 
     inclusive_statistics_reference = \
         utils.ParseCWPInclusiveCountFile(self._cwp_inclusive_reference)
+    inclusive_statistics_cum_reference = \
+        utils.ComputeCWPCummulativeInclusiveStatistics(
+            inclusive_statistics_reference)
     inclusive_statistics_test = \
         utils.ParseCWPInclusiveCountFile(self._cwp_inclusive_test)
+    inclusive_statistics_cum_test = \
+        utils.ComputeCWPCummulativeInclusiveStatistics(
+            inclusive_statistics_test)
     pairwise_inclusive_statistics_reference = \
         utils.ParseCWPPairwiseInclusiveCountFile(
             self._cwp_pairwise_inclusive_reference)
+    pairwise_inclusive_fractions_reference = \
+        utils.ComputeCWPChildFunctionsFractions(
+            inclusive_statistics_cum_reference,
+            pairwise_inclusive_statistics_reference)
     pairwise_inclusive_statistics_test = \
         utils.ParseCWPPairwiseInclusiveCountFile(
             self._cwp_pairwise_inclusive_test)
+    pairwise_inclusive_fractions_test = \
+        utils.ComputeCWPChildFunctionsFractions(
+            inclusive_statistics_cum_test,
+            pairwise_inclusive_statistics_test)
     parent_function_statistics = {}
 
     with open(self._cwp_function_groups_file) as input_file:
@@ -100,21 +110,20 @@ class MetricsExperiment(object):
 
     for parent_function_key, parent_function_statistics_test \
         in inclusive_statistics_test.iteritems():
-      parent_function_name, parent_function_file_name = \
-          parent_function_key.split(',')
+      parent_function_name, _ = parent_function_key.split(',')
       parent_function_fraction_test = parent_function_statistics_test[2]
 
       parent_function_fraction_reference = \
           inclusive_statistics_reference[parent_function_key][2]
 
-      child_functions_statistics_test = \
-          pairwise_inclusive_statistics_test.get(parent_function_name, {})
+      child_functions_fractions_test = \
+          pairwise_inclusive_fractions_test.get(parent_function_name, {})
 
-      child_functions_statistics_reference = \
-          pairwise_inclusive_statistics_reference.get(parent_function_name, {})
+      child_functions_fractions_reference = \
+          pairwise_inclusive_fractions_reference.get(parent_function_name, {})
 
       distance = benchmark_metrics.ComputeDistanceForFunction(
-          child_functions_statistics_test, child_functions_statistics_reference)
+          child_functions_fractions_test, child_functions_fractions_reference)
 
       parent_function_score_test = benchmark_metrics.ComputeScoreForFunction(
           distance, parent_function_fraction_test,
