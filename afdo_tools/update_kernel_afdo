@@ -194,7 +194,7 @@ do
     source "${config_file}"
   else
     # DON'T UPDATE THESE CONSTANTS HERE!
-    # Update config_file instead.
+    # Update ${config_file} instead.
     AMD_KVERS="4.14 4.19 5.4 5.10"
     ARM_KVERS="5.15"
     AMD_METADATA_FILE="afdo_metadata/kernel_afdo.json"
