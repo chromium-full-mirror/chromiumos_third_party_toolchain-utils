@@ -1,17 +1,17 @@
 {
-    "chromeos-kernel-5_10": {
-        "name": "R149-16663.0-1778462291"
-    },
-    "chromeos-kernel-5_15": {
-        "name": "R149-16667.5-1778461371"
-    },
-    "chromeos-kernel-5_4": {
-        "name": "R149-16663.0-1778461440"
-    },
-    "chromeos-kernel-6_1": {
-        "name": "R149-16667.5-1778461529"
-    },
-    "chromeos-kernel-6_6": {
-        "name": "R149-16667.5-1778461408"
-    }
+  "chromeos-kernel-5_10": {
+    "name": "R149-16663.0-1778462291"
+  },
+  "chromeos-kernel-5_15": {
+    "name": "R149-16667.5-1778461371"
+  },
+  "chromeos-kernel-5_4": {
+    "name": "R149-16663.0-1778461440"
+  },
+  "chromeos-kernel-6_1": {
+    "name": "R149-16667.5-1778461529"
+  },
+  "chromeos-kernel-6_6": {
+    "name": "R149-16667.5-1778461408"
+  }
 }
