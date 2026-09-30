@@ -1,0 +1,138 @@
+# Copyright 2026 The ChromiumOS Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Tests for mirror_latest_staticcheck_deps_to_localmirror."""
+
+import gzip
+import io
+import tarfile
+import unittest
+
+from go_tools import mirror_latest_staticcheck_deps_to_localmirror as mirror_sc
+
+
+def _make_tar_gz(
+    entries: list[tuple[str, bytes, int, int, dict[str, str]]],
+    gzip_mtime: int = 123456,
+) -> bytes:
+    """Builds a .tar.gz archive with custom metadata for testing."""
+    buf = io.BytesIO()
+    with gzip.GzipFile(
+        filename="test.tar", mode="wb", fileobj=buf, mtime=gzip_mtime
+    ) as gz_out:
+        with tarfile.open(
+            fileobj=gz_out, mode="w", format=tarfile.PAX_FORMAT
+        ) as tar:
+            for name, content, mode, mtime, pax_headers in entries:
+                info = tarfile.TarInfo(name=name)
+                info.size = len(content)
+                info.mode = mode
+                info.mtime = mtime
+                info.uid = 1000
+                info.gid = 1000
+                info.uname = "testuser"
+                info.gname = "testgroup"
+                info.pax_headers = pax_headers
+                tar.addfile(info, io.BytesIO(content))
+    return buf.getvalue()
+
+
+class Test(unittest.TestCase):
+    """Tests for mirror_latest_staticcheck_deps_to_localmirror."""
+
+    def test_escape_go_module_path(self) -> None:
+        self.assertEqual(
+            mirror_sc.escape_go_module_path("github.com/BurntSushi/toml"),
+            "github.com/!burnt!sushi/toml",
+        )
+        self.assertEqual(
+            mirror_sc.escape_go_module_path("golang.org/x/tools"),
+            "golang.org/x/tools",
+        )
+
+    def test_go_package_spec_urls(self) -> None:
+        gh_spec = mirror_sc.GoPackageSpec(
+            ebuild_name="dev-go/staticcheck",
+            go_module="honnef.co/go/tools",
+            cros_go_repopath="github.com/dominikh/go-tools",
+        )
+        self.assertFalse(gh_spec.is_googlesource)
+        self.assertEqual(
+            gh_spec.distfile_name("v0.8.1"),
+            "github.com-dominikh-go-tools-v0.8.1.tar.gz",
+        )
+        self.assertEqual(
+            gh_spec.upstream_archive_url("v0.8.1"),
+            "https://github.com/dominikh/go-tools/archive/v0.8.1.tar.gz",
+        )
+
+        gob_spec = mirror_sc.GoPackageSpec(
+            ebuild_name="dev-go/go-tools",
+            go_module="golang.org/x/tools",
+            cros_go_repopath="go.googlesource.com/tools",
+        )
+        self.assertTrue(gob_spec.is_googlesource)
+        self.assertEqual(
+            gob_spec.distfile_name("v0.50.0"),
+            "go.googlesource.com-tools-v0.50.0.tar.gz",
+        )
+        self.assertEqual(
+            gob_spec.upstream_archive_url("v0.50.0"),
+            "https://go.googlesource.com/tools/+archive/v0.50.0.tar.gz",
+        )
+
+    def test_normalize_tar_gz_bytes_is_deterministic(self) -> None:
+        tar1 = _make_tar_gz(
+            [
+                ("b.go", b"package b\n", 0o664, 1700000001, {"mtime": "1.1"}),
+                ("a.sh", b"#!/bin/sh\n", 0o775, 1700000002, {"mtime": "2.2"}),
+            ],
+            gzip_mtime=1700000001,
+        )
+        tar2 = _make_tar_gz(
+            [
+                ("a.sh", b"#!/bin/sh\n", 0o755, 1800000999, {"mtime": "9.9"}),
+                ("b.go", b"package b\n", 0o644, 1800000888, {"mtime": "8.8"}),
+            ],
+            gzip_mtime=1800000999,
+        )
+        self.assertNotEqual(tar1, tar2)
+        norm1 = mirror_sc.normalize_tar_gz_bytes(tar1)
+        norm2 = mirror_sc.normalize_tar_gz_bytes(tar2)
+        self.assertEqual(norm1, norm2)
+
+    def test_normalize_tar_gz_bytes_rejects_empty_or_unsupported_entries(
+        self,
+    ) -> None:
+        empty_tar = _make_tar_gz([])
+        with self.assertRaisesRegex(ValueError, "contains no files"):
+            mirror_sc.normalize_tar_gz_bytes(empty_tar)
+
+        buf = io.BytesIO()
+        with tarfile.open(
+            fileobj=buf, mode="w:gz", format=tarfile.PAX_FORMAT
+        ) as tar:
+            fifo = tarfile.TarInfo(name="pipe")
+            fifo.type = tarfile.FIFOTYPE
+            tar.addfile(fifo)
+        with self.assertRaisesRegex(ValueError, "Unsupported tar entry type"):
+            mirror_sc.normalize_tar_gz_bytes(buf.getvalue())
+
+    def test_select_packages(self) -> None:
+        self.assertEqual(
+            mirror_sc.select_packages(None),
+            list(mirror_sc.STATICCHECK_PACKAGES),
+        )
+        selected = mirror_sc.select_packages(["staticcheck", "dev-go/mod"])
+        self.assertEqual(
+            [s.ebuild_name for s in selected],
+            ["dev-go/staticcheck", "dev-go/mod"],
+        )
+        with self.assertRaisesRegex(ValueError, "Unknown package"):
+            mirror_sc.select_packages(["nonexistent"])
+
+    def test_parse_args_requires_mode(self) -> None:
+        with self.assertRaises(SystemExit):
+            mirror_sc.parse_args([])
+        self.assertTrue(mirror_sc.parse_args(["--download-only"]).download_only)
