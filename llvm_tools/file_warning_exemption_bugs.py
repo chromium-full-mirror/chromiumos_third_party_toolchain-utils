@@ -24,7 +24,7 @@ import shlex
 import subprocess
 import sys
 import textwrap
-from typing import Any, Generator, Self
+from typing import Any, Container, Generator, Iterable, Mapping, Self
 
 from cros_utils import bugs
 from cros_utils import cros_paths
@@ -428,17 +428,44 @@ def format_bug_from_package_warnings(
     )
 
 
+def filter_bugworthy_warnings(
+    per_package_warnings: Iterable[warning_exemption.YamlPackageWarnings],
+    permanent_exemptions: Mapping[
+        warning_exemption.Package, str
+    ] = warning_exemption.PERMANENT_EXEMPTION_PACKAGES,
+) -> list[warning_exemption.YamlPackageWarnings]:
+    """Filters per_package_warnings to packages that need bugs filed."""
+    bugworthy = []
+    for x in per_package_warnings:
+        if not x.warning_names:
+            continue
+        if reason := permanent_exemptions.get(x.package):
+            logging.info(
+                "Ignoring warnings in %s; suppression is permanent: %s",
+                x.package,
+                reason,
+            )
+            continue
+        bugworthy.append(x)
+    return bugworthy
+
+
 def format_bug_for_mage_followup(
     parent_bug: int,
     crostc_contact: str,
     per_package_warnings: list[warning_exemption.YamlPackageWarnings],
     frozen_per_package_warnings: list[warning_exemption.YamlPackageWarnings],
+    permanent_exemptions: Container[
+        warning_exemption.Package
+    ] = warning_exemption.PERMANENT_EXEMPTION_PACKAGES,
 ) -> str | None:
     def extract_warning_set(
         warning_list: list[warning_exemption.YamlPackageWarnings],
     ) -> set[tuple[warning_exemption.Package, str]]:
         result: set[tuple[warning_exemption.Package, str]] = set()
         for package_warnings in warning_list:
+            if package_warnings.package in permanent_exemptions:
+                continue
             result.update(
                 (package_warnings.package, x)
                 for x in package_warnings.warning_names
@@ -581,9 +608,9 @@ def main(argv: list[str]) -> None:
 
     yaml_file = parse_input_yaml(input_yaml)
     severe_warnings = set(yaml_file.severe_warnings)
-    bugworthy_warnings = [
-        x for x in yaml_file.per_package_warnings if x.warning_names
-    ]
+    bugworthy_warnings = filter_bugworthy_warnings(
+        yaml_file.per_package_warnings
+    )
     components = resolve_all_package_components(
         cros_root, repo_list, packages=[x.package for x in bugworthy_warnings]
     )

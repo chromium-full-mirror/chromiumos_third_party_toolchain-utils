@@ -63,6 +63,19 @@ class Test(test_helpers.TempDirTestCase):
         )
         self.assertEqual(round_tripped, yaml_input)
 
+        empty_yaml_input = warning_exemption.YamlFile(
+            exemption_go_file_name="some_file.go",
+            severe_warnings=[],
+            per_package_warnings=[],
+            frozen_per_package_warnings=[],
+        )
+        self.assertEqual(
+            warning_exemption.YamlFile.from_yaml(
+                yaml.safe_load(empty_yaml_input.as_raw_yaml())
+            ),
+            empty_yaml_input,
+        )
+
     def test_package_parsing(self) -> None:
         with self.assertRaisesRegex(ValueError, ".*foo.*"):
             warning_exemption.Package.from_yaml("foo")

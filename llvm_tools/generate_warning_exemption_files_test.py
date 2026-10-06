@@ -44,6 +44,10 @@ class Test(test_helpers.TempDirTestCase):
             name="amd64-generic", url="https://amd64-generic-url"
         )
         brya = warning_exemption.Builder(name="brya", url="https://brya-url")
+        dog_pkg = warning_exemption.Package(
+            category="dog",
+            package_name="pkg",
+        )
         actual = gen.create_go_file(
             llvm_revision=321,
             per_package_warnings={
@@ -57,10 +61,7 @@ class Test(test_helpers.TempDirTestCase):
                     ),
                     {amd64_generic, brya},
                 ),
-                warning_exemption.Package(
-                    category="dog",
-                    package_name="pkg",
-                ): (
+                dog_pkg: (
                     warning_exemption.FatalWarningGroup(
                         warning_names={"baz"},
                         warning_lines=set(),
@@ -78,6 +79,12 @@ class Test(test_helpers.TempDirTestCase):
                     set(),
                 ),
             },
+            permanent_exemptions={
+                dog_pkg: (
+                    "Dog is deprecated; see "
+                    "https://chromium-review.googlesource.com/c/1234."
+                )
+            },
         )
         fname = "warningSuppressionsForLLVM_r321"
         expected = gen.GO_COPYRIGHT_HEADER + textwrap.dedent(
@@ -93,6 +100,8 @@ class Test(test_helpers.TempDirTestCase):
                     return []string{{ "-Wno-bar", "-Wno-foo" }}
                 // Observed and suppressed on 1 builder during testing.
                 // e.g., brya: https://brya-url.
+                // Permanent suppression: Dog is deprecated; see
+                // https://chromium-review.googlesource.com/c/1234.
                 case "dog/pkg":
                     return []string{{ "-Wno-baz" }}
                 // (No builder links were available for these exemptions).
@@ -112,6 +121,7 @@ class Test(test_helpers.TempDirTestCase):
             url="https://amd64-generic-url",
         )
         file_name = "foo.go"
+        ignored_pkg = warning_exemption.Package("dead", "pkg")
         yaml_str = gen.create_yaml_file(
             file_name,
             per_package_warnings={
@@ -125,7 +135,15 @@ class Test(test_helpers.TempDirTestCase):
                     ),
                     {amd64_generic},
                 ),
+                ignored_pkg: (
+                    warning_exemption.FatalWarningGroup(
+                        warning_names={"dead-warn"},
+                        warning_lines={"Ignored [-Wdead-warn]"},
+                    ),
+                    {amd64_generic},
+                ),
             },
+            permanent_exemptions={ignored_pkg: "Dead package (b/999)."},
         )
 
         print(yaml_str)

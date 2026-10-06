@@ -15,7 +15,8 @@ import logging
 import os
 from pathlib import Path
 import re
-from typing import Any, DefaultDict, Generator, Self
+import types
+from typing import Any, DefaultDict, Generator, Mapping, Self
 
 import yaml  # pylint: disable=import-error
 
@@ -107,6 +108,19 @@ class Package:
         return cls(category, package_name)
 
 
+# Packages whose compiler_wrapper warning suppressions are permanent and should
+# never have warning-cleanup bugs filed against OWNERS.
+# Maps Package -> human-readable reason.
+PERMANENT_EXEMPTION_PACKAGES: Mapping[Package, str] = types.MappingProxyType(
+    {
+        Package("net-wireless", "bluez"): (
+            "BlueZ is deprecated and OWNERS requested no further warning "
+            "cleanup patches (b/567060657, crrev.com/c/8480331)."
+        ),
+    }
+)
+
+
 @dataclasses.dataclass(frozen=True, eq=True, order=True)
 class YamlPackageWarnings:
     """Warnings for a package, formattable as YAML."""
@@ -175,7 +189,7 @@ class YamlFile:
             "\n\n",
             YAML_SEVERITY_SUBHEADER,
             "severe_warnings:\n",
-            yaml.dump(self.severe_warnings),
+            yaml.dump(self.severe_warnings) if self.severe_warnings else "",
             "\n\n",
             YAML_WARNING_LIST_SUBHEADER,
             "per_package_warnings:\n",
@@ -193,7 +207,13 @@ class YamlFile:
             "frozen_per_package_warnings:\n",
             # This generally isn't meant for editing by humans; don't try to
             # make the formatting pretty or consistent.
-            yaml.dump([x.as_yaml() for x in self.frozen_per_package_warnings]),
+            (
+                yaml.dump(
+                    [x.as_yaml() for x in self.frozen_per_package_warnings]
+                )
+                if self.frozen_per_package_warnings
+                else ""
+            ),
         )
 
         return "".join(yaml_file_parts)
@@ -203,7 +223,7 @@ class YamlFile:
         """Create an instance of this class from an `as_raw_yaml()`."""
         s = s.copy()
         for k in ("per_package_warnings", "frozen_per_package_warnings"):
-            s[k] = [YamlPackageWarnings.from_yaml(x) for x in s.get(k, ())]
+            s[k] = [YamlPackageWarnings.from_yaml(x) for x in s.get(k) or ()]
         # Similar to other `from_yaml`, yaml will sometimes deserialize these as
         # None if they're empty; normalize to an empty list.
         s["severe_warnings"] = s["severe_warnings"] or []

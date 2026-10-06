@@ -159,6 +159,50 @@ class Test(test_helpers.TempDirTestCase):
             )
         )
 
+    def test_mage_followup_bug_ignores_permanent_exemptions(self) -> None:
+        ignored_pkg = warning_exemption.Package("dead", "pkg")
+        ignored_exemption = warning_exemption.YamlPackageWarnings(
+            package=ignored_pkg,
+            warning_lines=[],
+            warning_names=["baz"],
+            observed_on=[],
+        )
+        self.assertIsNone(
+            fweb.format_bug_for_mage_followup(
+                parent_bug=1,
+                crostc_contact="foo",
+                per_package_warnings=[],
+                frozen_per_package_warnings=[ignored_exemption],
+                permanent_exemptions={ignored_pkg},
+            )
+        )
+
+    def test_filter_bugworthy_warnings_skips_permanent_exemptions(self) -> None:
+        kept_exemption = warning_exemption.YamlPackageWarnings(
+            package=warning_exemption.Package("foo", "bar"),
+            warning_lines=[],
+            warning_names=["baz"],
+            observed_on=[],
+        )
+        empty_exemption = warning_exemption.YamlPackageWarnings(
+            package=warning_exemption.Package("empty", "pkg"),
+            warning_lines=[],
+            warning_names=[],
+            observed_on=[],
+        )
+        ignored_pkg = warning_exemption.Package("dead", "pkg")
+        ignored_exemption = warning_exemption.YamlPackageWarnings(
+            package=ignored_pkg,
+            warning_lines=[],
+            warning_names=["qux"],
+            observed_on=[],
+        )
+        result = fweb.filter_bugworthy_warnings(
+            [kept_exemption, empty_exemption, ignored_exemption],
+            permanent_exemptions={ignored_pkg: "Deprecated package (b/123)."},
+        )
+        self.assertEqual(result, [kept_exemption])
+
     def test_format_bug_from_package_warnings_default(self) -> None:
         exemption = warning_exemption.YamlPackageWarnings(
             package=warning_exemption.Package("foo", "bar"),

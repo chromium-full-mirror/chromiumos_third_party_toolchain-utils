@@ -29,7 +29,7 @@ import shutil
 import subprocess
 import tempfile
 import textwrap
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from llvm_tools import chroot
 from llvm_tools import cros_cls
@@ -48,23 +48,36 @@ GO_COPYRIGHT_HEADER = f"""\
 
 def create_exemption_comment_for_package(
     builders: list[warning_exemption.Builder],
+    permanent_exemption_reason: str | None = None,
 ) -> str:
     if not builders:
-        return "// (No builder links were available for these exemptions)."
-
-    if len(builders) == 1:
-        commentary = "Observed and suppressed on 1 builder during testing."
+        lines = ["// (No builder links were available for these exemptions)."]
     else:
-        commentary = (
-            f"Observed and suppressed on {len(builders)} builders "
-            "during testing."
+        if len(builders) == 1:
+            commentary = "Observed and suppressed on 1 builder during testing."
+        else:
+            commentary = (
+                f"Observed and suppressed on {len(builders)} builders "
+                "during testing."
+            )
+        lines = [
+            f"// {commentary}",
+            f"// e.g., {builders[0].name}: {builders[0].url}.",
+        ]
+
+    if permanent_exemption_reason:
+        indent = "// "
+        lines.append(
+            textwrap.fill(
+                f"Permanent suppression: {permanent_exemption_reason}",
+                width=80,
+                initial_indent=indent,
+                subsequent_indent=indent,
+                break_long_words=False,
+                break_on_hyphens=False,
+            )
         )
-    return textwrap.dedent(
-        f"""\
-        // {commentary}
-        // e.g., {builders[0].name}: {builders[0].url}.
-        """
-    ).rstrip()
+    return "\n".join(lines)
 
 
 def group_warnings_per_package(
@@ -102,6 +115,9 @@ def create_go_file(
             warning_exemption.FatalWarningGroup, set[warning_exemption.Builder]
         ],
     ],
+    permanent_exemptions: Mapping[
+        warning_exemption.Package, str
+    ] = warning_exemption.PERMANENT_EXEMPTION_PACKAGES,
 ) -> str:
     """Creates a file that parses as Go to ignore the given warnings.
 
@@ -113,6 +129,8 @@ def create_go_file(
         per_package_warnings: A dictionary of
           {package: (warning_names, builders_observed_on)}. The builder
           collection may be empty, but warning_names may not.
+        permanent_exemptions: Mapping of permanently exempted packages to the
+          reason for the exemption.
     """
     func_name = f"warningSuppressionsForLLVM_r{llvm_revision}"
     header = textwrap.dedent(
@@ -138,7 +156,10 @@ def create_go_file(
         wno_flags = ", ".join(
             f'"-Wno-{x}"' for x in sorted(warning_group.warning_names)
         )
-        comment = create_exemption_comment_for_package(sorted(builders))
+        comment = create_exemption_comment_for_package(
+            sorted(builders),
+            permanent_exemptions.get(package),
+        )
         case_stmt = textwrap.dedent(
             f"""\
             case "{package.category}/{package.package_name}":
@@ -184,11 +205,25 @@ def create_yaml_file(
             warning_exemption.FatalWarningGroup, set[warning_exemption.Builder]
         ],
     ],
+    permanent_exemptions: Mapping[
+        warning_exemption.Package, str
+    ] = warning_exemption.PERMANENT_EXEMPTION_PACKAGES,
 ) -> str:
     """Returns the contents of a YAML file generated from the arg."""
     all_warning_names = set()
     yaml_per_package_warnings = []
-    for package, (warning_group, builders) in per_package_warnings.items():
+    for package, (warning_group, builders) in sorted(
+        per_package_warnings.items()
+    ):
+        if reason := permanent_exemptions.get(package):
+            logging.info(
+                "Ignoring warnings in %s for YAML output; suppression is "
+                "permanent: %s",
+                package,
+                reason,
+            )
+            continue
+
         all_warning_names.update(warning_group.warning_names)
         yaml_per_package_warnings.append(
             warning_exemption.YamlPackageWarnings(
@@ -200,7 +235,6 @@ def create_yaml_file(
                 observed_on=sorted(builders),
             )
         )
-    yaml_per_package_warnings.sort()
 
     return warning_exemption.YamlFile(
         exemption_go_file_name=go_file_name,
