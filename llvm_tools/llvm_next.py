@@ -23,7 +23,9 @@ _LLVM_NEXT_MANIFEST_CL: str | None = "https://crrev.com/i/9819715/12"
 # These are CLs that need to run in llvm-next bot invocations that aren't
 # uploaded by individuals in the global allowlist.
 # pylint: disable=line-too-long
-_LLVM_NEXT_TESTING_URL_ALLOWLIST: tuple[str, ...] = ()
+_LLVM_NEXT_TESTING_URL_ALLOWLIST: tuple[str, ...] = (
+    "https://crrev.com/c/8493851/2",
+)
 
 # Users/tooling edit the strings above for ease-of-use; scripts should use the
 # well-typed constants, though.
