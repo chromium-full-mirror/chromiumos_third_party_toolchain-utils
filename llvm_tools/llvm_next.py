@@ -12,7 +12,11 @@ LLVM_NEXT_REV = 614150
 
 # Group of people who are not in OWNERS, but can be trusted by bb_add.py and
 # llvm_next_py_autoupdate.py if they're the uploader of CLs.
-TRUSTED_UPLOADERS: tuple[str, ...] = ("devadharuns@google.com",)
+TRUSTED_UPLOADERS: tuple[str, ...] = (
+    "darshanhn@google.com",
+    "devadharuns@google.com",
+    "gandhimathir@google.com",
+)
 
 # NOTE: Always specify patch-sets for these CLs. We don't want uploads by
 # untrusted users to turn into bot invocations w/ untrusted input.
