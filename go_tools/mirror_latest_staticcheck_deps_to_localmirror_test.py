@@ -8,6 +8,7 @@ import gzip
 import io
 import tarfile
 import unittest
+from unittest import mock
 
 from go_tools import mirror_latest_staticcheck_deps_to_localmirror as mirror_sc
 
@@ -124,6 +125,52 @@ class Test(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported tar entry type"):
             mirror_sc.normalize_tar_gz_bytes(buf.getvalue())
 
+    @mock.patch.object(mirror_sc, "upload_to_gs", autospec=True)
+    @mock.patch.object(mirror_sc, "try_download_from_gs", autospec=True)
+    def test_mirror_package_to_gs_uploads_when_missing(
+        self,
+        mock_try_download: mock.MagicMock,
+        mock_upload: mock.MagicMock,
+    ) -> None:
+        spec = mirror_sc.STATICCHECK_PACKAGES[0]
+        mock_try_download.return_value = None
+
+        line = mirror_sc.mirror_package_to_gs(spec, "v0.8.1", b"tarball-bytes")
+        self.assertTrue(
+            line.startswith(
+                "DIST github.com-dominikh-go-tools-v0.8.1.tar.gz 13 BLAKE2B "
+            )
+        )
+        mock_upload.assert_called_once_with(
+            b"tarball-bytes",
+            "gs://chromeos-localmirror/distfiles/"
+            "github.com-dominikh-go-tools-v0.8.1.tar.gz",
+        )
+
+    @mock.patch.object(mirror_sc, "upload_to_gs", autospec=True)
+    @mock.patch.object(mirror_sc, "try_download_from_gs", autospec=True)
+    def test_mirror_package_to_gs_verifies_and_skips_when_already_present(
+        self,
+        mock_try_download: mock.MagicMock,
+        mock_upload: mock.MagicMock,
+    ) -> None:
+        spec = mirror_sc.STATICCHECK_PACKAGES[2]  # dev-go/mod
+        unnormalized_gs = _make_tar_gz(
+            [("go.mod", b"module golang.org/x/mod\n", 0o644, 1799999999, {})],
+            gzip_mtime=1799999999,
+        )
+        canonical = mirror_sc.normalize_tar_gz_bytes(unnormalized_gs)
+        mock_try_download.return_value = unnormalized_gs
+
+        line = mirror_sc.mirror_package_to_gs(spec, "v0.41.0", canonical)
+        mock_upload.assert_not_called()
+        self.assertEqual(
+            line,
+            mirror_sc.format_manifest_line(
+                "go.googlesource.com-mod-v0.41.0.tar.gz", unnormalized_gs
+            ),
+        )
+
     def test_verify_tarball_bytes_accepts_normalized_googlesource_tarball(
         self,
     ) -> None:
@@ -176,6 +223,9 @@ class Test(unittest.TestCase):
         with self.assertRaises(SystemExit):
             mirror_sc.parse_args([])
         with self.assertRaises(SystemExit):
+            mirror_sc.parse_args(["--download-only", "--upload"])
+        with self.assertRaises(SystemExit):
             mirror_sc.parse_args(["--download-only", "--verify"])
         self.assertTrue(mirror_sc.parse_args(["--download-only"]).download_only)
+        self.assertTrue(mirror_sc.parse_args(["--upload"]).upload)
         self.assertTrue(mirror_sc.parse_args(["--verify"]).verify)

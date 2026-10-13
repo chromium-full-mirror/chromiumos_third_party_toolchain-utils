@@ -2,13 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Downloads or verifies upstream tarballs for dev-go/staticcheck and its deps.
+"""Mirrors or verifies upstream tarballs for dev-go/staticcheck and its deps.
 
 Queries https://proxy.golang.org for the latest tagged versions of
 dev-go/staticcheck and its versioned dev-go/* dependencies in
-chromiumos-overlay, fetches their upstream source tarballs (normalizing
-*.googlesource.com archives so their checksums are deterministic), and prints
-their Portage Manifest DIST lines.
+chromiumos-overlay, and fetches their upstream source tarballs (normalizing
+*.googlesource.com archives so their checksums are deterministic).
 
 Why this script targets a fixed subset and fetches @latest for each:
 In ChromiumOS, cros-go.eclass builds packages in GOPATH mode (GO111MODULE=off)
@@ -29,6 +28,7 @@ reverse dependencies in chromiumos-overlay.
 Requires one of:
 - --download-only: Fetch canonical tarballs and print Manifest lines without
   uploading.
+- --upload: Upload any missing tarballs to gs://chromeos-localmirror/distfiles/.
 - --verify: Download the tarballs already present on
   gs://chromeos-localmirror/distfiles/ and verify their contents and checksums
   against fresh canonical upstream downloads.
@@ -290,6 +290,29 @@ def try_download_from_gs(gs_url: str) -> bytes | None:
         return Path(tmp_file.name).read_bytes()
 
 
+def upload_to_gs(data: bytes, gs_url: str) -> None:
+    """Uploads `data` to `gs_url` with public-read ACL and no-clobber."""
+    with tempfile.NamedTemporaryFile(prefix="cros_go_upload_") as tmp_file:
+        Path(tmp_file.name).write_bytes(data)
+        subprocess.run(
+            (
+                gs.GSUTIL,
+                "-q",
+                # Require generation 0 so gsutil fails rather than overwriting
+                # an existing object on localmirror.
+                "-h",
+                "x-goog-if-generation-match:0",
+                "cp",
+                "-a",
+                "public-read",
+                tmp_file.name,
+                gs_url,
+            ),
+            check=True,
+            stdin=subprocess.DEVNULL,
+        )
+
+
 def verify_tarball_bytes(
     spec: GoPackageSpec,
     version: str,
@@ -343,10 +366,37 @@ def verify_package_on_gs(spec: GoPackageSpec, version: str) -> str:
     )
     gs_bytes = try_download_from_gs(gs_url)
     if gs_bytes is None:
-        raise RuntimeError(f"Missing {gs_url} on localmirror.")
+        raise RuntimeError(
+            f"Missing {gs_url} on localmirror; run with --upload to upload."
+        )
 
     canonical_bytes = fetch_canonical_tarball(spec, version)
     return verify_tarball_bytes(spec, version, gs_bytes, canonical_bytes)
+
+
+def mirror_package_to_gs(
+    spec: GoPackageSpec, version: str, canonical_bytes: bytes
+) -> str:
+    """Mirrors `spec` at `version` to gs:// if not already present.
+
+    Returns:
+        The Portage Manifest DIST line for the tarball.
+    """
+    gs_url = spec.gs_url(version)
+    distfile_name = spec.distfile_name(version)
+    gs_bytes = try_download_from_gs(gs_url)
+    if gs_bytes is not None:
+        logging.info(
+            "%s already exists at %s; verifying existing tarball and skipping "
+            "upload.",
+            distfile_name,
+            gs_url,
+        )
+        return verify_tarball_bytes(spec, version, gs_bytes, canonical_bytes)
+
+    logging.info("Uploading %s -> %s ...", distfile_name, gs_url)
+    upload_to_gs(canonical_bytes, gs_url)
+    return format_manifest_line(distfile_name, canonical_bytes)
 
 
 def select_packages(
@@ -388,6 +438,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="""
         Fetch canonical tarballs and print Manifest lines without uploading to
         gs://.
+        """,
+    )
+    mode_group.add_argument(
+        "--upload",
+        action="store_true",
+        help="""
+        Fetch canonical tarballs and upload any missing ones to
+        gs://chromeos-localmirror/distfiles/.
         """,
     )
     mode_group.add_argument(
@@ -440,9 +498,15 @@ def main(argv: list[str]) -> None:
             line = verify_package_on_gs(spec, version)
         else:
             canonical_bytes = fetch_canonical_tarball(spec, version)
-            line = format_manifest_line(
-                spec.distfile_name(version), canonical_bytes
-            )
+            if opts.upload:
+                line = mirror_package_to_gs(spec, version, canonical_bytes)
+            else:
+                assert (
+                    opts.download_only
+                ), "Unhandled mode flag; add a branch for the new flag here."
+                line = format_manifest_line(
+                    spec.distfile_name(version), canonical_bytes
+                )
         return spec, version, line
 
     if opts.verify:
