@@ -63,6 +63,11 @@ class Test(unittest.TestCase):
             "github.com-dominikh-go-tools-v0.8.1.tar.gz",
         )
         self.assertEqual(
+            gh_spec.gs_url("v0.8.1"),
+            "gs://chromeos-localmirror/distfiles/"
+            "github.com-dominikh-go-tools-v0.8.1.tar.gz",
+        )
+        self.assertEqual(
             gh_spec.upstream_archive_url("v0.8.1"),
             "https://github.com/dominikh/go-tools/archive/v0.8.1.tar.gz",
         )
@@ -119,6 +124,41 @@ class Test(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported tar entry type"):
             mirror_sc.normalize_tar_gz_bytes(buf.getvalue())
 
+    def test_verify_tarball_bytes_accepts_normalized_googlesource_tarball(
+        self,
+    ) -> None:
+        spec = mirror_sc.STATICCHECK_PACKAGES[2]  # dev-go/mod
+        unnormalized_gs = _make_tar_gz(
+            [("go.mod", b"module golang.org/x/mod\n", 0o644, 1799999999, {})],
+            gzip_mtime=1799999999,
+        )
+        canonical = mirror_sc.normalize_tar_gz_bytes(unnormalized_gs)
+
+        line = mirror_sc.verify_tarball_bytes(
+            spec, "v0.41.0", unnormalized_gs, canonical
+        )
+        self.assertEqual(
+            line,
+            mirror_sc.format_manifest_line(
+                "go.googlesource.com-mod-v0.41.0.tar.gz", unnormalized_gs
+            ),
+        )
+
+    def test_verify_tarball_bytes_fails_on_content_mismatch_or_corruption(
+        self,
+    ) -> None:
+        gh_spec = mirror_sc.STATICCHECK_PACKAGES[0]
+        with self.assertRaisesRegex(RuntimeError, "Verification failed"):
+            mirror_sc.verify_tarball_bytes(
+                gh_spec, "v0.8.1", b"corrupted-bytes", b"canonical-bytes"
+            )
+
+        gob_spec = mirror_sc.STATICCHECK_PACKAGES[2]  # dev-go/mod
+        with self.assertRaisesRegex(RuntimeError, "Verification failed"):
+            mirror_sc.verify_tarball_bytes(
+                gob_spec, "v0.41.0", b"not-a-valid-tar-gz", b"canonical-bytes"
+            )
+
     def test_select_packages(self) -> None:
         self.assertEqual(
             mirror_sc.select_packages(None),
@@ -135,4 +175,7 @@ class Test(unittest.TestCase):
     def test_parse_args_requires_mode(self) -> None:
         with self.assertRaises(SystemExit):
             mirror_sc.parse_args([])
+        with self.assertRaises(SystemExit):
+            mirror_sc.parse_args(["--download-only", "--verify"])
         self.assertTrue(mirror_sc.parse_args(["--download-only"]).download_only)
+        self.assertTrue(mirror_sc.parse_args(["--verify"]).verify)

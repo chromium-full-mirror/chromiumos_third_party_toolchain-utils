@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Downloads upstream tarballs for dev-go/staticcheck and its dependencies.
+"""Downloads or verifies upstream tarballs for dev-go/staticcheck and its deps.
 
 Queries https://proxy.golang.org for the latest tagged versions of
 dev-go/staticcheck and its versioned dev-go/* dependencies in
@@ -26,26 +26,35 @@ strong backwards compatibility across minor releases, so pulling @latest for
 these packages is expected to satisfy both the newest staticcheck and any older
 reverse dependencies in chromiumos-overlay.
 
-Requires:
+Requires one of:
 - --download-only: Fetch canonical tarballs and print Manifest lines without
   uploading.
+- --verify: Download the tarballs already present on
+  gs://chromeos-localmirror/distfiles/ and verify their contents and checksums
+  against fresh canonical upstream downloads.
 """
 
 import argparse
+import concurrent.futures
 import dataclasses
 import gzip
 import hashlib
 import io
 import json
 import logging
+from pathlib import Path
 import re
 import subprocess
 import tarfile
 import tempfile
 from typing import Sequence
 import urllib.request
+import zlib
+
+from cros_utils import gs
 
 
+LOCALMIRROR_DISTFILES_ROOT = "gs://chromeos-localmirror/distfiles"
 GO_PROXY_BASE_URL = "https://proxy.golang.org"
 
 _UPPERCASE_LETTER_RE = re.compile(r"[A-Z]")
@@ -64,6 +73,10 @@ class GoPackageSpec:
         """Returns the localmirror distfile name per cros-go.eclass."""
         repo_dash = self.cros_go_repopath.replace("/", "-")
         return f"{repo_dash}-{version}.tar.gz"
+
+    def gs_url(self, version: str) -> str:
+        """Returns the gs:// URL in chromeos-localmirror/distfiles."""
+        return f"{LOCALMIRROR_DISTFILES_ROOT}/{self.distfile_name(version)}"
 
     def upstream_archive_url(self, version: str) -> str:
         """Returns the upstream archive URL per cros-go.eclass."""
@@ -264,6 +277,78 @@ def format_manifest_line(distfile_name: str, data: bytes) -> str:
     )
 
 
+def try_download_from_gs(gs_url: str) -> bytes | None:
+    """Downloads `gs_url` and returns its raw bytes, or None if not present."""
+    if not gs.ls(gs_url):
+        return None
+    with tempfile.NamedTemporaryFile(prefix="cros_go_gs_") as tmp_file:
+        subprocess.run(
+            (gs.GSUTIL, "-q", "cp", gs_url, tmp_file.name),
+            check=True,
+            stdin=subprocess.DEVNULL,
+        )
+        return Path(tmp_file.name).read_bytes()
+
+
+def verify_tarball_bytes(
+    spec: GoPackageSpec,
+    version: str,
+    gs_bytes: bytes,
+    canonical_bytes: bytes,
+) -> str:
+    """Verifies that `gs_bytes` matches `canonical_bytes`.
+
+    Returns:
+        The Portage Manifest DIST line for `gs_bytes`.
+    """
+    distfile_name = spec.distfile_name(version)
+    if gs_bytes == canonical_bytes:
+        logging.info(
+            "Verified %s: exact byte-for-byte SHA512 match with canonical "
+            "download.",
+            distfile_name,
+        )
+        return format_manifest_line(distfile_name, gs_bytes)
+
+    if spec.is_googlesource:
+        try:
+            normalized_gs_bytes = normalize_tar_gz_bytes(gs_bytes)
+        except (tarfile.TarError, EOFError, zlib.error, ValueError):
+            normalized_gs_bytes = None
+        if normalized_gs_bytes == canonical_bytes:
+            logging.info(
+                "Verified %s: unpacked archive contents/modes match canonical "
+                "download (raw tar headers differ only in Gitiles mtime).",
+                distfile_name,
+            )
+            return format_manifest_line(distfile_name, gs_bytes)
+
+    gs_sha512 = hashlib.sha512(gs_bytes).hexdigest()
+    canonical_sha512 = hashlib.sha512(canonical_bytes).hexdigest()
+    raise RuntimeError(
+        f"Verification failed for {spec.gs_url(version)}: "
+        f"gs SHA512 ({gs_sha512}) != canonical SHA512 ({canonical_sha512})"
+    )
+
+
+def verify_package_on_gs(spec: GoPackageSpec, version: str) -> str:
+    """Verifies that `spec` at `version` on gs:// matches upstream.
+
+    Returns:
+        The Portage Manifest DIST line for the verified tarball on gs://.
+    """
+    gs_url = spec.gs_url(version)
+    logging.info(
+        "Verifying %s (%s) at %s ...", spec.ebuild_name, version, gs_url
+    )
+    gs_bytes = try_download_from_gs(gs_url)
+    if gs_bytes is None:
+        raise RuntimeError(f"Missing {gs_url} on localmirror.")
+
+    canonical_bytes = fetch_canonical_tarball(spec, version)
+    return verify_tarball_bytes(spec, version, gs_bytes, canonical_bytes)
+
+
 def select_packages(
     requested_names: Sequence[str] | None,
 ) -> list[GoPackageSpec]:
@@ -305,6 +390,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         gs://.
         """,
     )
+    mode_group.add_argument(
+        "--verify",
+        action="store_true",
+        help="""
+        Download existing tarballs from gs://chromeos-localmirror and verify
+        them against fresh canonical upstream downloads.
+        """,
+    )
     parser.add_argument(
         "-p",
         "--package",
@@ -334,8 +427,8 @@ def main(argv: list[str]) -> None:
     )
 
     specs = select_packages(opts.packages)
-    manifest_lines: list[tuple[GoPackageSpec, str, str]] = []
-    for spec in specs:
+
+    def process_package(spec: GoPackageSpec) -> tuple[GoPackageSpec, str, str]:
         version = fetch_latest_version(spec.go_module)
         logging.info(
             "Latest version for %s (%s): %s",
@@ -343,13 +436,33 @@ def main(argv: list[str]) -> None:
             spec.go_module,
             version,
         )
-        canonical_bytes = fetch_canonical_tarball(spec, version)
-        line = format_manifest_line(
-            spec.distfile_name(version), canonical_bytes
-        )
-        manifest_lines.append((spec, version, line))
+        if opts.verify:
+            line = verify_package_on_gs(spec, version)
+        else:
+            canonical_bytes = fetch_canonical_tarball(spec, version)
+            line = format_manifest_line(
+                spec.distfile_name(version), canonical_bytes
+            )
+        return spec, version, line
+
+    if opts.verify:
+        # Verification is mostly blocked on network I/O (querying
+        # proxy.golang.org, fetching from gs://, and cloning/downloading
+        # upstream archives); cap workers at 8 so we do not overload remote
+        # services.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            manifest_lines = list(executor.map(process_package, specs))
+    else:
+        manifest_lines = [process_package(spec) for spec in specs]
 
     print("\nManifest entries:")
     for spec, version, line in manifest_lines:
         print(f"# {spec.ebuild_name} ({version})")
         print(line)
+
+    if opts.verify:
+        logging.info(
+            "All requested packages fetched from localmirror match hashes with "
+            "their upstreams. If you'd like, you can also double-check the "
+            "Manifest entries above."
+        )
