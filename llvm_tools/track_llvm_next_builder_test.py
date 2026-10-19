@@ -5,9 +5,12 @@
 """Tests for track_llvm_next_builder.py."""
 
 import argparse
+import datetime
 import unittest
+from unittest import mock
 
 from llvm_tools import bb_add
+from llvm_tools import cros_cls
 from llvm_tools import track_llvm_next_builder
 
 
@@ -43,3 +46,64 @@ class TestTrackLlvmNextBuilder(unittest.TestCase):
     def test_resolve_builder_name_invalid(self) -> None:
         with self.assertRaises(argparse.ArgumentTypeError):
             track_llvm_next_builder.resolve_builder_name("non-existent-builder")
+
+    @mock.patch.object(cros_cls, "fetch_bb_ls_info", autospec=True)
+    def test_check_builder_returns_false_when_no_builds_found(
+        self, mock_fetch: mock.MagicMock
+    ) -> None:
+        mock_fetch.return_value = []
+        self.assertFalse(
+            track_llvm_next_builder.check_builder(
+                "chromeos/staging/staging-build-chromiumos-sdk", 5
+            )
+        )
+
+    @mock.patch.object(cros_cls, "fetch_bb_ls_info", autospec=True)
+    def test_check_builder_returns_false_when_all_builds_failed(
+        self, mock_fetch: mock.MagicMock
+    ) -> None:
+        now = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        mock_fetch.return_value = [
+            cros_cls.BbLsInfo(
+                build_id=cros_cls.BuildID(100),
+                builder_name="staging-build-chromiumos-sdk",
+                status=cros_cls.BuilderStatus.FAILURE,
+                create_time=now,
+            ),
+            cros_cls.BbLsInfo(
+                build_id=cros_cls.BuildID(101),
+                builder_name="staging-build-chromiumos-sdk",
+                status=cros_cls.BuilderStatus.INFRA_FAILURE,
+                create_time=now,
+            ),
+        ]
+        self.assertFalse(
+            track_llvm_next_builder.check_builder(
+                "chromeos/staging/staging-build-chromiumos-sdk", 5
+            )
+        )
+
+    @mock.patch.object(cros_cls, "fetch_bb_ls_info", autospec=True)
+    def test_check_builder_returns_true_when_not_all_builds_failed(
+        self, mock_fetch: mock.MagicMock
+    ) -> None:
+        now = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        mock_fetch.return_value = [
+            cros_cls.BbLsInfo(
+                build_id=cros_cls.BuildID(100),
+                builder_name="staging-build-chromiumos-sdk",
+                status=cros_cls.BuilderStatus.FAILURE,
+                create_time=now,
+            ),
+            cros_cls.BbLsInfo(
+                build_id=cros_cls.BuildID(101),
+                builder_name="staging-build-chromiumos-sdk",
+                status=cros_cls.BuilderStatus.SUCCESS,
+                create_time=now,
+            ),
+        ]
+        self.assertTrue(
+            track_llvm_next_builder.check_builder(
+                "chromeos/staging/staging-build-chromiumos-sdk", 5
+            )
+        )
