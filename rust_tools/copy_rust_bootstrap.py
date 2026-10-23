@@ -115,14 +115,19 @@ def _debinpkgify_in_chroot(
     return tbz2_file
 
 
-def _upload(local_file: Path, remote_path: str, force: bool) -> None:
+def _upload(local_file: Path, remote_path: str) -> None:
     """Uploads the local file to the given gs:// path."""
     logging.info("Uploading %s -> %s", local_file, remote_path)
-    cmd_base = ["gsutil", "cp", "-a", "public-read"]
-    if not force:
-        cmd_base.append("-n")
     subprocess.run(
-        cmd_base + [str(local_file), remote_path],
+        (
+            "gsutil",
+            "cp",
+            "-a",
+            "public-read",
+            "-n",
+            str(local_file),
+            remote_path,
+        ),
         check=True,
         stdin=subprocess.DEVNULL,
     )
@@ -155,11 +160,6 @@ def main(argv: list[str]) -> None:
         "--dry-run",
         action="store_true",
         help="Do everything except actually uploading the artifact.",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Upload the artifact even if one exists in localmirror already.",
     )
     opts = parser.parse_args(argv)
 
@@ -202,4 +202,4 @@ def main(argv: list[str]) -> None:
                 target_path,
             )
         else:
-            _upload(file_to_upload, target_path, opts.force)
+            _upload(file_to_upload, target_path)
