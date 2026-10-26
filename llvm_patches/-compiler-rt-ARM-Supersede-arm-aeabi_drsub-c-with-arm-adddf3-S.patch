@@ -1,0 +1,43 @@
+From 074b0dd48fb6ed42e195b90f8242c928a7efd8ac Mon Sep 17 00:00:00 2001
+From: Deva S <devadharuns@google.com>
+Date: Wed, 30 Sep 2026 12:58:08 +0000
+Subject: [PATCH] [compiler-rt][ARM] Supersede arm/aeabi_drsub.c with
+ arm/adddf3.S
+
+When COMPILER_RT_ARM_OPTIMIZED_FP is enabled, arm/adddf3.S is included,
+which defines __aeabi_drsub. Because arm_EABI_RT_SOURCES also includes
+arm/aeabi_drsub.c, linking libclang_rt.builtins-armhf.a into
+libgcc_s.so.1 with --whole-archive results in duplicate symbol errors
+for __aeabi_drsub.
+
+Add arm/aeabi_drsub.c to the SUPERSEDES property of arm/adddf3.S so that
+filter_builtin_sources excludes it when arm/adddf3.S is present.
+
+BUG=b:571626747
+TEST=cros_setup_toolchains
+
+patch.cherry: false
+patch.metadata.author: Deva S <devadharuns@google.com>
+patch.platforms: chromiumos
+patch.version_range.from: 612910
+patch.version_range.until: null
+
+---
+ compiler-rt/lib/builtins/CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/compiler-rt/lib/builtins/CMakeLists.txt b/compiler-rt/lib/builtins/CMakeLists.txt
+index c2fc4facd8ca..be9861644714 100644
+--- a/compiler-rt/lib/builtins/CMakeLists.txt
++++ b/compiler-rt/lib/builtins/CMakeLists.txt
+@@ -517,7 +517,7 @@ set(thumb1_base_SOURCES
+   arm/addsf3.S
+   ${GENERIC_SOURCES}
+ )
+-set_special_properties(arm/adddf3.S SUPERSEDES subdf3.c PROVIDES subdf3)
++set_special_properties(arm/adddf3.S SUPERSEDES subdf3.c arm/aeabi_drsub.c PROVIDES subdf3 aeabi_drsub)
+ 
+ if(COMPILER_RT_ARM_OPTIMIZED_FP)
+   set(thumb1_base_SOURCES
+-- 
+2.39.5

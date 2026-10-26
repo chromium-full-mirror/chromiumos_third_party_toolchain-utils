@@ -1324,5 +1324,20 @@
       "from": 600745,
       "until": 616126
     }
+  },
+  {
+    "metadata": {
+      "author": "Deva S <devadharuns@google.com>",
+      "info": [],
+      "title": "[compiler-rt][ARM] Supersede arm/aeabi_drsub.c with arm/adddf3.S"
+    },
+    "platforms": [
+      "chromiumos"
+    ],
+    "rel_patch_path": "-compiler-rt-ARM-Supersede-arm-aeabi_drsub-c-with-arm-adddf3-S.patch",
+    "version_range": {
+      "from": 612910,
+      "until": null
+    }
   }
 ]
