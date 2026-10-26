@@ -14,14 +14,6 @@ func warningSuppressionsForLLVM_r584947(packageNameAndCategory string) []string 
 	// e.g., asurada-cq: https://ci.chromium.org/b/8678797060881034945.
 	case "chromeos-base/arc-keymint":
 		return []string{"-Wno-character-conversion"}
-	// Observed and suppressed on 22 builders during testing.
-	// e.g., betty-arc-r-container-cq: https://ci.chromium.org/b/8678797061031006113.
-	case "chromeos-base/chromeos-fpmcu-bloonchipper-unittests":
-		return []string{"-Wno-uninitialized-const-pointer"}
-	// Observed and suppressed on 22 builders during testing.
-	// e.g., betty-arc-r-container-cq: https://ci.chromium.org/b/8678797061031006113.
-	case "chromeos-base/chromeos-fpmcu-dartmonkey-unittests":
-		return []string{"-Wno-uninitialized-const-pointer"}
 	// Observed and suppressed on 1 builder during testing.
 	// e.g., staging-build-chromiumos-sdk: https://ci.chromium.org/b/8678324675048799153.
 	case "chromeos-base/perfetto":

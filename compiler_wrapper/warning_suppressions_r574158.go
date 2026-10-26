@@ -34,22 +34,6 @@ func warningSuppressionsForLLVM_r574158(packageNameAndCategory string) []string 
 	// e.g., amd64-generic-cq: https://ci.chromium.org/b/8698633388008551569.
 	case "chromeos-base/vboot_reference-tests":
 		return []string{"-Wno-default-const-init-field-unsafe"}
-	// Observed and suppressed on 56 builders during testing.
-	// e.g., amd64-generic-cq: https://ci.chromium.org/b/8698633388008551569.
-	case "net-wireless/floss":
-		return []string{"-Wno-nonnull"}
-	// Observed and suppressed on 70 builders during testing.
-	// e.g., amd64-generic-cq: https://ci.chromium.org/b/8698633388008551569.
-	case "sys-apps/coreboot-utils":
-		return []string{"-Wno-unterminated-string-initialization"}
-	// Observed and suppressed on 27 builders during testing.
-	// e.g., asurada-cq: https://ci.chromium.org/b/8698633381440500769.
-	case "sys-boot/coreboot":
-		return []string{"-Wno-unterminated-string-initialization"}
-	// Observed and suppressed on 1 builder during testing.
-	// e.g., amd64-generic-kernel-v5_10-buildtest-cq: https://ci.chromium.org/b/8698633387895853489.
-	case "sys-kernel/chromeos-kernel-5_10":
-		return []string{"-Wno-unterminated-string-initialization"}
 	// Observed and suppressed on 6 builders during testing.
 	// e.g., amd64-generic-kernel-v6_1-cq: https://ci.chromium.org/b/8698633378551660225.
 	case "sys-kernel/chromeos-kernel-6_1":

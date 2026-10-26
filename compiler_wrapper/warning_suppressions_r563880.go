@@ -10,10 +10,6 @@ func warningSuppressionsForLLVM_r563880(packageNameAndCategory string) []string 
 	// e.g., fatcat-cq: https://ci.chromium.org/b/8715339982079177585.
 	case "chromeos-base/intel-openvino":
 		return []string{"-Wno-deprecated-literal-operator"}
-	// Observed and suppressed on 7 builders during testing.
-	// e.g., brox-cq: https://ci.chromium.org/b/8715339980931440017.
-	case "chromeos-base/odml":
-		return []string{"-Wno-unused-private-field"}
 	// Observed and suppressed on 1 builder during testing.
 	// e.g., arm-generic-cq: https://ci.chromium.org/b/8715339977521747697.
 	case "dev-python/numpy":

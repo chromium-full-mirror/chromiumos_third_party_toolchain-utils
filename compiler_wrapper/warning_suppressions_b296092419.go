@@ -154,6 +154,8 @@ func warningSuppressionsForLLVM_b296092419(packageNameAndCategory string) []stri
 		return []string{"-Wno-int-conversion"}
 	// Observed and suppressed on 65 builders during testing.
 	// e.g., amd64-generic-cq: https://ci.chromium.org/b/8712322028830920497.
+	// Permanent suppression: BlueZ is deprecated and OWNERS requested no
+	// further warning cleanup patches (b/567060657, crrev.com/c/8480331).
 	case "net-wireless/bluez":
 		return []string{"-Wno-incompatible-function-pointer-types"}
 	// Observed and suppressed on 68 builders during testing.
